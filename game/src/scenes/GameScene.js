@@ -6,9 +6,24 @@ const PLAYER_Y = WORLD_H - 140;
 const PLAYER_SPEED = 800;
 const BULLET_SPEED = 700;
 const BULLET_INTERVAL = 180;
-const ENEMY_SPEED = 140;
 const ENEMY_SPAWN_INTERVAL = 700;
 const HISCORE_KEY = 'lane-defense:hiscore';
+
+const ENEMY_TYPES = [
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 140, score: 1, weight: 60 },
+  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 230, score: 2, weight: 25 },
+  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 90, score: 5, weight: 15 },
+];
+
+function pickEnemyType() {
+  const total = ENEMY_TYPES.reduce((s, t) => s + t.weight, 0);
+  let r = Phaser.Math.Between(0, total - 1);
+  for (const t of ENEMY_TYPES) {
+    if (r < t.weight) return t;
+    r -= t.weight;
+  }
+  return ENEMY_TYPES[0];
+}
 
 const LANE_COUNT = 3;
 const LANE_W = WORLD_W / LANE_COUNT;
@@ -60,10 +75,14 @@ export default class GameScene extends Phaser.Scene {
   preload() {
     this.makeTriangleTexture('tex_player', 48, 48, 0x4cc2ff);
     this.makeRectTexture('tex_bullet', 6, 18, 0xffe066);
-    this.makeCircleTexture('tex_enemy', 22, 0xff5577);
     this.makeCircleTexture('tex_star', 2, 0xffffff);
+    for (const t of ENEMY_TYPES) {
+      this.makeCircleTexture(t.tex, t.radius, t.color);
+    }
     this.makeRectTexture('tex_panel_add', GATE_PANEL_W, GATE_PANEL_H, 0x3ad27a);
     this.makeRectTexture('tex_panel_mul', GATE_PANEL_W, GATE_PANEL_H, 0x4cc2ff);
+    this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
+    this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
   }
 
   makeTriangleTexture(key, w, h, color) {
@@ -204,10 +223,24 @@ export default class GameScene extends Phaser.Scene {
   spawnEnemy() {
     if (this.gameOver) return;
     const lane = Phaser.Math.Between(0, LANE_COUNT - 1);
-    const enemy = this.enemies.create(LANE_X[lane], -30, 'tex_enemy');
-    const speed = ENEMY_SPEED + Math.min(this.score * 2, 200);
-    enemy.body.setVelocity(0, speed);
-    enemy.setData('hp', 1);
+    const type = pickEnemyType();
+    const enemy = this.enemies.create(LANE_X[lane], -type.radius, type.tex);
+    const speedBoost = Math.min(this.score * 1.5, 180);
+    enemy.body.setVelocity(0, type.speed + speedBoost);
+    enemy.setData('hp', type.hp);
+    enemy.setData('maxHp', type.hp);
+    enemy.setData('score', type.score);
+    enemy.setData('typeKey', type.key);
+
+    if (type.hp > 1) {
+      const barW = type.radius * 1.8;
+      const barBg = this.add.image(enemy.x, enemy.y - type.radius - 8, 'tex_hpbar_bg').setDisplaySize(barW, 6);
+      const barFg = this.add.image(enemy.x - barW / 2, enemy.y - type.radius - 8, 'tex_hpbar_fg')
+        .setDisplaySize(barW, 6).setOrigin(0, 0.5);
+      enemy.hpBarBg = barBg;
+      enemy.hpBarFg = barFg;
+      enemy.hpBarW = barW;
+    }
   }
 
   spawnGate() {
@@ -240,8 +273,9 @@ export default class GameScene extends Phaser.Scene {
     bullet.destroy();
     const hp = enemy.getData('hp') - 1;
     if (hp <= 0) {
-      enemy.destroy();
-      this.score += 1;
+      const reward = enemy.getData('score') ?? 1;
+      this.killEnemy(enemy);
+      this.score += reward;
       this.scoreText.setText(`SCORE ${this.score}`);
       if (this.score > this.hiScore) {
         this.hiScore = this.score;
@@ -249,7 +283,20 @@ export default class GameScene extends Phaser.Scene {
       }
     } else {
       enemy.setData('hp', hp);
+      this.refreshHpBar(enemy);
     }
+  }
+
+  refreshHpBar(enemy) {
+    if (!enemy.hpBarFg) return;
+    const ratio = Math.max(0, enemy.getData('hp') / enemy.getData('maxHp'));
+    enemy.hpBarFg.setDisplaySize(enemy.hpBarW * ratio, 6);
+  }
+
+  killEnemy(enemy) {
+    if (enemy.hpBarBg) enemy.hpBarBg.destroy();
+    if (enemy.hpBarFg) enemy.hpBarFg.destroy();
+    enemy.destroy();
   }
 
   onPlayerHit() {
@@ -336,7 +383,14 @@ export default class GameScene extends Phaser.Scene {
       if (b.active && b.y < -30) b.destroy();
     });
     this.enemies.getChildren().forEach((e) => {
-      if (e.active && e.y > WORLD_H + 30) e.destroy();
+      if (!e.active) return;
+      if (e.hpBarBg) {
+        e.hpBarBg.x = e.x;
+        e.hpBarBg.y = e.y - e.displayHeight / 2 - 8;
+        e.hpBarFg.x = e.x - e.hpBarW / 2;
+        e.hpBarFg.y = e.hpBarBg.y;
+      }
+      if (e.y > WORLD_H + 30) this.killEnemy(e);
     });
     this.panels.getChildren().forEach((p) => {
       if (!p.active) return;
