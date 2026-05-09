@@ -8,6 +8,23 @@ const BULLET_SPEED = 700;
 const BULLET_INTERVAL = 180;
 const ENEMY_SPEED = 140;
 const ENEMY_SPAWN_INTERVAL = 700;
+const HISCORE_KEY = 'lane-defense:hiscore';
+
+function loadHiScore() {
+  try {
+    const raw = globalThis.localStorage?.getItem(HISCORE_KEY);
+    const n = raw ? parseInt(raw, 10) : 0;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveHiScore(score) {
+  try {
+    globalThis.localStorage?.setItem(HISCORE_KEY, String(score));
+  } catch {}
+}
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -47,6 +64,7 @@ export default class GameScene extends Phaser.Scene {
 
   create() {
     this.score = 0;
+    this.hiScore = loadHiScore();
     this.gameOver = false;
 
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
@@ -76,6 +94,12 @@ export default class GameScene extends Phaser.Scene {
       fontSize: '28px',
       color: '#ffffff',
     });
+
+    this.hiScoreText = this.add.text(WORLD_W - 20, 20, `BEST ${this.hiScore}`, {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      color: '#ffe066',
+    }).setOrigin(1, 0);
 
     this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '드래그로 좌우 이동', {
       fontFamily: 'monospace',
@@ -129,6 +153,10 @@ export default class GameScene extends Phaser.Scene {
       enemy.destroy();
       this.score += 1;
       this.scoreText.setText(`SCORE ${this.score}`);
+      if (this.score > this.hiScore) {
+        this.hiScore = this.score;
+        this.hiScoreText.setText(`BEST ${this.hiScore}`);
+      }
     } else {
       enemy.setData('hp', hp);
     }
@@ -145,19 +173,34 @@ export default class GameScene extends Phaser.Scene {
     this.spawnEvent.remove();
     this.physics.pause();
 
+    saveHiScore(this.hiScore);
+    const newRecord = this.score > 0 && this.score === this.hiScore;
+
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x000000, 0.6);
-    this.add.text(WORLD_W / 2, WORLD_H / 2 - 60, 'GAME OVER', {
+    this.add.text(WORLD_W / 2, WORLD_H / 2 - 80, 'GAME OVER', {
       fontFamily: 'monospace',
       fontSize: '56px',
       color: '#ff5577',
     }).setOrigin(0.5);
-    this.add.text(WORLD_W / 2, WORLD_H / 2, `점수: ${this.score}`, {
+    this.add.text(WORLD_W / 2, WORLD_H / 2 - 20, `점수: ${this.score}`, {
       fontFamily: 'monospace',
       fontSize: '32px',
       color: '#ffffff',
     }).setOrigin(0.5);
+    this.add.text(WORLD_W / 2, WORLD_H / 2 + 20, `최고: ${this.hiScore}`, {
+      fontFamily: 'monospace',
+      fontSize: '24px',
+      color: '#ffe066',
+    }).setOrigin(0.5);
+    if (newRecord) {
+      this.add.text(WORLD_W / 2, WORLD_H / 2 + 60, '★ 신기록! ★', {
+        fontFamily: 'monospace',
+        fontSize: '26px',
+        color: '#4cc2ff',
+      }).setOrigin(0.5);
+    }
 
-    const btn = this.add.text(WORLD_W / 2, WORLD_H / 2 + 80, '[ 다시하기 ]', {
+    const btn = this.add.text(WORLD_W / 2, WORLD_H / 2 + 110, '[ 다시하기 ]', {
       fontFamily: 'monospace',
       fontSize: '32px',
       color: '#4cc2ff',
