@@ -65,6 +65,4 @@ markdown_extensions:
 
 nav:
   - 홈: index.md
-  - 기획서:
-      - 게임 기획서 (Lane Defense): 게임_기획서.md
-      - 개발 테스트 개요: 개발_테스트_개요_문서.md
+  - 기획서: 기획서.md
