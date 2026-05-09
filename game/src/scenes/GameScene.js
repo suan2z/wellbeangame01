@@ -3,12 +3,21 @@ import Phaser from 'phaser';
 const WORLD_W = 540;
 const WORLD_H = 960;
 const PLAYER_Y = WORLD_H - 140;
-const PLAYER_SPEED = 600;
+const PLAYER_SPEED = 800;
 const BULLET_SPEED = 700;
 const BULLET_INTERVAL = 180;
 const ENEMY_SPEED = 140;
 const ENEMY_SPAWN_INTERVAL = 700;
 const HISCORE_KEY = 'lane-defense:hiscore';
+
+const LANE_COUNT = 3;
+const LANE_W = WORLD_W / LANE_COUNT;
+const LANE_X = [LANE_W * 0.5, LANE_W * 1.5, LANE_W * 2.5];
+
+function laneFromPointerX(x) {
+  const idx = Math.floor(x / LANE_W);
+  return Phaser.Math.Clamp(idx, 0, LANE_COUNT - 1);
+}
 
 function loadHiScore() {
   try {
@@ -66,6 +75,7 @@ export default class GameScene extends Phaser.Scene {
     this.score = 0;
     this.hiScore = loadHiScore();
     this.gameOver = false;
+    this.currentLane = 1;
 
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
     for (let i = 0; i < 60; i++) {
@@ -74,7 +84,16 @@ export default class GameScene extends Phaser.Scene {
       this.add.image(x, y, 'tex_star').setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
     }
 
-    this.player = this.physics.add.sprite(WORLD_W / 2, PLAYER_Y, 'tex_player');
+    for (let i = 1; i < LANE_COUNT; i++) {
+      this.add.rectangle(LANE_W * i, WORLD_H / 2, 2, WORLD_H, 0xffffff, 0.08);
+    }
+    this.laneHighlight = this.add.rectangle(
+      LANE_X[this.currentLane], WORLD_H / 2,
+      LANE_W, WORLD_H,
+      0x4cc2ff, 0.05,
+    );
+
+    this.player = this.physics.add.sprite(LANE_X[this.currentLane], PLAYER_Y, 'tex_player');
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(40, 40);
 
@@ -101,7 +120,7 @@ export default class GameScene extends Phaser.Scene {
       color: '#ffe066',
     }).setOrigin(1, 0);
 
-    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '드래그로 좌우 이동', {
+    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '터치한 레인으로 이동', {
       fontFamily: 'monospace',
       fontSize: '22px',
       color: '#ffffff80',
@@ -124,7 +143,12 @@ export default class GameScene extends Phaser.Scene {
 
   onPointer(pointer) {
     if (!pointer.isDown) return;
-    this.targetX = Phaser.Math.Clamp(pointer.x, 30, WORLD_W - 30);
+    const lane = laneFromPointerX(pointer.x);
+    if (lane !== this.currentLane) {
+      this.currentLane = lane;
+      this.targetX = LANE_X[lane];
+      this.laneHighlight.x = LANE_X[lane];
+    }
     if (this.hintText.alpha > 0) {
       this.tweens.add({ targets: this.hintText, alpha: 0, duration: 400 });
     }
@@ -134,16 +158,16 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     const bullet = this.bullets.create(this.player.x, this.player.y - 24, 'tex_bullet');
     bullet.body.setVelocity(0, -BULLET_SPEED);
-    bullet.setData('kind', 'bullet');
   }
 
   spawnEnemy() {
     if (this.gameOver) return;
-    const x = Phaser.Math.Between(40, WORLD_W - 40);
-    const enemy = this.enemies.create(x, -30, 'tex_enemy');
+    const lane = Phaser.Math.Between(0, LANE_COUNT - 1);
+    const enemy = this.enemies.create(LANE_X[lane], -30, 'tex_enemy');
     const speed = ENEMY_SPEED + Math.min(this.score * 2, 200);
     enemy.body.setVelocity(0, speed);
     enemy.setData('hp', 1);
+    enemy.setData('lane', lane);
   }
 
   onBulletHitEnemy(bullet, enemy) {
