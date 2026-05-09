@@ -24,4 +24,8 @@ const config = {
   scene: [GameScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+if (typeof window !== 'undefined') {
+  window.__game = game;
+}
