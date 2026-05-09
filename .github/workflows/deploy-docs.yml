@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - claude/mobile-game-overview-4BPEv
   workflow_dispatch:
 
 permissions:
