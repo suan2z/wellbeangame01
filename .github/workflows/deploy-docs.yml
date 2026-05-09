@@ -1,4 +1,4 @@
-name: Deploy MkDocs to GitHub Pages
+name: Deploy Docs and Game to GitHub Pages
 
 on:
   push:
@@ -32,11 +32,31 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install MkDocs dependencies
         run: pip install -r requirements.txt
 
-      - name: Build site
+      - name: Build MkDocs site
         run: mkdocs build --strict
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+
+      - name: Install game dependencies
+        working-directory: game
+        run: npm ci
+
+      - name: Build game
+        working-directory: game
+        run: npm run build
+
+      - name: Merge game into site
+        run: |
+          mkdir -p site/play
+          cp -r game/dist/. site/play/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
