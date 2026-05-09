@@ -14,6 +14,23 @@ const LANE_COUNT = 3;
 const LANE_W = WORLD_W / LANE_COUNT;
 const LANE_X = [LANE_W * 0.5, LANE_W * 1.5, LANE_W * 2.5];
 
+const FIREPOWER_MAX = 16;
+const GATE_SPEED = 110;
+const GATE_SPAWN_INTERVAL = 6000;
+const GATE_PANEL_W = LANE_W * 0.9;
+const GATE_PANEL_H = 80;
+
+const GATE_OP_POOL = [
+  { op: 'add', value: 1, label: '+1', color: 0x3ad27a },
+  { op: 'add', value: 2, label: '+2', color: 0x3ad27a },
+  { op: 'mul', value: 2, label: '×2', color: 0x4cc2ff },
+];
+
+function applyOp(power, op, value) {
+  const next = op === 'mul' ? power * value : power + value;
+  return Phaser.Math.Clamp(Math.floor(next), 1, FIREPOWER_MAX);
+}
+
 function laneFromPointerX(x) {
   const idx = Math.floor(x / LANE_W);
   return Phaser.Math.Clamp(idx, 0, LANE_COUNT - 1);
@@ -45,6 +62,8 @@ export default class GameScene extends Phaser.Scene {
     this.makeRectTexture('tex_bullet', 6, 18, 0xffe066);
     this.makeCircleTexture('tex_enemy', 22, 0xff5577);
     this.makeCircleTexture('tex_star', 2, 0xffffff);
+    this.makeRectTexture('tex_panel_add', GATE_PANEL_W, GATE_PANEL_H, 0x3ad27a);
+    this.makeRectTexture('tex_panel_mul', GATE_PANEL_W, GATE_PANEL_H, 0x4cc2ff);
   }
 
   makeTriangleTexture(key, w, h, color) {
@@ -76,6 +95,7 @@ export default class GameScene extends Phaser.Scene {
     this.hiScore = loadHiScore();
     this.gameOver = false;
     this.currentLane = 1;
+    this.firepower = 1;
 
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
     for (let i = 0; i < 60; i++) {
@@ -101,9 +121,11 @@ export default class GameScene extends Phaser.Scene {
 
     this.bullets = this.physics.add.group();
     this.enemies = this.physics.add.group();
+    this.panels = this.physics.add.group();
 
     this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy, null, this);
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerHit, null, this);
+    this.physics.add.overlap(this.player, this.panels, this.onPlayerHitPanel, null, this);
 
     this.input.on('pointerdown', this.onPointer, this);
     this.input.on('pointermove', this.onPointer, this);
@@ -120,9 +142,15 @@ export default class GameScene extends Phaser.Scene {
       color: '#ffe066',
     }).setOrigin(1, 0);
 
-    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '터치한 레인으로 이동', {
+    this.powerText = this.add.text(WORLD_W / 2, 24, `POWER ${this.firepower}`, {
       fontFamily: 'monospace',
-      fontSize: '22px',
+      fontSize: '20px',
+      color: '#4cc2ff',
+    }).setOrigin(0.5, 0);
+
+    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '터치한 레인으로 이동 · 게이트 통과로 강해진다', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
       color: '#ffffff80',
     }).setOrigin(0.5);
 
@@ -137,6 +165,13 @@ export default class GameScene extends Phaser.Scene {
       delay: ENEMY_SPAWN_INTERVAL,
       loop: true,
       callback: this.spawnEnemy,
+      callbackScope: this,
+    });
+
+    this.gateEvent = this.time.addEvent({
+      delay: GATE_SPAWN_INTERVAL,
+      loop: true,
+      callback: this.spawnGate,
       callbackScope: this,
     });
   }
@@ -156,8 +191,14 @@ export default class GameScene extends Phaser.Scene {
 
   shoot() {
     if (this.gameOver) return;
-    const bullet = this.bullets.create(this.player.x, this.player.y - 24, 'tex_bullet');
-    bullet.body.setVelocity(0, -BULLET_SPEED);
+    const n = this.firepower;
+    const spreadStep = 10;
+    const totalWidth = (n - 1) * spreadStep;
+    const startX = this.player.x - totalWidth / 2;
+    for (let i = 0; i < n; i++) {
+      const bullet = this.bullets.create(startX + i * spreadStep, this.player.y - 24, 'tex_bullet');
+      bullet.body.setVelocity(0, -BULLET_SPEED);
+    }
   }
 
   spawnEnemy() {
@@ -167,7 +208,32 @@ export default class GameScene extends Phaser.Scene {
     const speed = ENEMY_SPEED + Math.min(this.score * 2, 200);
     enemy.body.setVelocity(0, speed);
     enemy.setData('hp', 1);
-    enemy.setData('lane', lane);
+  }
+
+  spawnGate() {
+    if (this.gameOver) return;
+    const lanes = Phaser.Utils.Array.Shuffle([0, 1, 2]).slice(0, 2);
+    const optionPool = Phaser.Utils.Array.Shuffle([...GATE_OP_POOL]).slice(0, 2);
+    const gateId = `g${this.time.now}`;
+
+    lanes.forEach((lane, i) => {
+      const def = optionPool[i];
+      const tex = def.op === 'mul' ? 'tex_panel_mul' : 'tex_panel_add';
+      const panel = this.panels.create(LANE_X[lane], -GATE_PANEL_H / 2, tex);
+      panel.body.setVelocity(0, GATE_SPEED);
+      panel.setData('gateId', gateId);
+      panel.setData('op', def.op);
+      panel.setData('value', def.value);
+      panel.setAlpha(0.85);
+
+      const label = this.add.text(panel.x, panel.y, def.label, {
+        fontFamily: 'monospace',
+        fontSize: '36px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      panel.label = label;
+    });
   }
 
   onBulletHitEnemy(bullet, enemy) {
@@ -191,10 +257,37 @@ export default class GameScene extends Phaser.Scene {
     this.endGame();
   }
 
+  onPlayerHitPanel(_player, panel) {
+    if (this.gameOver) return;
+    if (!panel.active) return;
+    const op = panel.getData('op');
+    const value = panel.getData('value');
+    const gateId = panel.getData('gateId');
+
+    const before = this.firepower;
+    this.firepower = applyOp(this.firepower, op, value);
+    this.powerText.setText(`POWER ${this.firepower}`);
+    if (this.firepower !== before) {
+      this.tweens.add({
+        targets: this.powerText,
+        scale: { from: 1.6, to: 1 },
+        duration: 250,
+      });
+    }
+
+    this.panels.getChildren().slice().forEach((p) => {
+      if (p.getData('gateId') === gateId) {
+        if (p.label) p.label.destroy();
+        p.destroy();
+      }
+    });
+  }
+
   endGame() {
     this.gameOver = true;
     this.shootEvent.remove();
     this.spawnEvent.remove();
+    this.gateEvent.remove();
     this.physics.pause();
 
     saveHiScore(this.hiScore);
@@ -244,6 +337,17 @@ export default class GameScene extends Phaser.Scene {
     });
     this.enemies.getChildren().forEach((e) => {
       if (e.active && e.y > WORLD_H + 30) e.destroy();
+    });
+    this.panels.getChildren().forEach((p) => {
+      if (!p.active) return;
+      if (p.label) {
+        p.label.x = p.x;
+        p.label.y = p.y;
+      }
+      if (p.y > WORLD_H + GATE_PANEL_H) {
+        if (p.label) p.label.destroy();
+        p.destroy();
+      }
     });
   }
 }
