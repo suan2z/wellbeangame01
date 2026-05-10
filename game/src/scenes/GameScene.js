@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 
 const WORLD_W = 540;
 const WORLD_H = 960;
-const PLAYER_Y = WORLD_H - 140;
+const PLAYER_Y = WORLD_H * 0.68;
 const PLAYER_SPEED = 800;
 const ENEMY_SPAWN_INTERVAL = 700;
 const HISCORE_KEY = 'lane-defense:hiscore';
@@ -200,8 +200,12 @@ export default class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '14px', color: '#3ad27a',
     }).setOrigin(0.5, 0);
 
-    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60, '드래그로 이동 · 좌측 상자 파괴 = 무기 · 우측 = 부대원 +1', {
+    this.add.rectangle(WORLD_W / 2, (PLAYER_Y + WORLD_H) / 2 + 20, WORLD_W, WORLD_H - PLAYER_Y - 60, 0xffffff, 0.02);
+    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60, '드래그로 이동 · 좌측 상자 = 무기 · 우측 = 부대원 +1', {
       fontFamily: 'monospace', fontSize: '13px', color: '#ffffff80',
+    }).setOrigin(0.5);
+    this.add.text(WORLD_W / 2, WORLD_H - 30, '· 터치 영역 ·', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffffff40',
     }).setOrigin(0.5);
 
     BOX_SLOT_TYPES.forEach((typeKey, slotIdx) => {
