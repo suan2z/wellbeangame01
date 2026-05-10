@@ -4,7 +4,7 @@ const WORLD_W = 540;
 const WORLD_H = 960;
 const PLAYER_Y = WORLD_H * 0.68;
 const PLAYER_SPEED = 800;
-const ENEMY_SPAWN_INTERVAL = 300;
+const ENEMY_SPAWN_INTERVAL = 60;
 const HISCORE_KEY = 'lane-defense:hiscore';
 
 const ZONE_W = WORLD_W * 0.15;
@@ -17,9 +17,9 @@ const SQUAD_MAX = 12;
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
-  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 50, score: 1, weight: 60 },
-  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 70, score: 2, weight: 25 },
-  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 35, score: 5, weight: 15 },
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 45, score: 1, weight: 60 },
+  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 65, score: 2, weight: 25 },
+  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 30, score: 5, weight: 15 },
 ];
 
 function pickEnemyType() {
@@ -171,11 +171,23 @@ export default class GameScene extends Phaser.Scene {
     this.squad = [];
     this.addSquadMember();
 
-    this.bullets = this.physics.add.group();
-    this.enemies = this.physics.add.group();
+    this.bullets = this.physics.add.group({
+      defaultKey: 'tex_bullet',
+      maxSize: 400,
+    });
+    this.enemies = this.physics.add.group({
+      defaultKey: 'tex_enemy_normal',
+      maxSize: 250,
+    });
     this.boxes = this.physics.add.group();
-    this.weaponItems = this.physics.add.group();
-    this.squadItems = this.physics.add.group();
+    this.weaponItems = this.physics.add.group({
+      defaultKey: 'tex_weapon_item',
+      maxSize: 30,
+    });
+    this.squadItems = this.physics.add.group({
+      defaultKey: 'tex_squad_item',
+      maxSize: 20,
+    });
 
     this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy, null, this);
     this.physics.add.overlap(this.bullets, this.boxes, this.onBulletHitBox, null, this);
@@ -294,7 +306,10 @@ export default class GameScene extends Phaser.Scene {
         const rad = Phaser.Math.DegToRad(angleDeg);
         const vx = Math.cos(rad) * w.speed;
         const vy = Math.sin(rad) * w.speed;
-        const bullet = this.bullets.create(member.x, member.y - 18, 'tex_bullet');
+        const bullet = this.bullets.get(member.x, member.y - 18, 'tex_bullet');
+        if (!bullet) continue;
+        bullet.enableBody(true, member.x, member.y - 18, true, true);
+        bullet.setTexture('tex_bullet');
         bullet.setTint(w.color);
         bullet.body.setVelocity(vx, vy);
         bullet.setData('damage', w.damage);
@@ -302,11 +317,19 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  recycleBullet(b) {
+    b.disableBody(true, true);
+  }
+
   spawnEnemy() {
     if (this.gameOver) return;
     const x = Phaser.Math.Between(COMBAT_LEFT + 20, COMBAT_RIGHT - 20);
     const type = pickEnemyType();
-    const enemy = this.enemies.create(x, -type.radius, type.tex);
+    const enemy = this.enemies.get(x, -type.radius, type.tex);
+    if (!enemy) return;
+    enemy.setTexture(type.tex);
+    enemy.enableBody(true, x, -type.radius, true, true);
+    enemy.body.setSize(type.radius * 2, type.radius * 2, true);
     const speedBoost = Math.min(this.score * 0.3, 40);
     enemy.body.setVelocity(0, type.speed + speedBoost);
     enemy.setData('hp', type.hp);
@@ -314,6 +337,8 @@ export default class GameScene extends Phaser.Scene {
     enemy.setData('score', type.score);
     enemy.setData('typeKey', type.key);
 
+    if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
+    if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
     if (type.hp > 1) {
       const barW = type.radius * 1.8;
       const barBg = this.add.image(enemy.x, enemy.y - type.radius - 8, 'tex_hpbar_bg').setDisplaySize(barW, 6);
@@ -363,31 +388,46 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     const active = this.squadItems.getChildren().filter((i) => i.active).length;
     if (active >= 3) return;
-    const item = this.squadItems.create(SQUAD_ITEM_X, -20, 'tex_squad_item');
+    const item = this.squadItems.get(SQUAD_ITEM_X, -20, 'tex_squad_item');
+    if (!item) return;
+    item.enableBody(true, SQUAD_ITEM_X, -20, true, true);
     item.body.setVelocity(0, SQUAD_ITEM_FALL_SPEED);
-    const label = this.add.text(item.x, item.y, '+1', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    item.label = label;
+    if (!item.label) {
+      item.label = this.add.text(item.x, item.y, '+1', {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
+      }).setOrigin(0.5);
+    } else {
+      item.label.setVisible(true).setText('+1');
+    }
   }
 
   spawnWeaponItem(x, y, weaponKey) {
     const w = getWeapon(weaponKey);
-    const item = this.weaponItems.create(x, y, 'tex_weapon_item');
+    const item = this.weaponItems.get(x, y, 'tex_weapon_item');
+    if (!item) return;
+    item.enableBody(true, x, y, true, true);
     item.setTint(w.color);
     item.body.setVelocity(0, WEAPON_ITEM_FALL_SPEED);
     item.setData('weaponKey', weaponKey);
-    const label = this.add.text(x, y, w.name, {
-      fontFamily: 'monospace', fontSize: '11px',
-      color: rgbHex(w.color), fontStyle: 'bold',
-    }).setOrigin(0.5);
-    item.label = label;
+    if (!item.label) {
+      item.label = this.add.text(x, y, w.name, {
+        fontFamily: 'monospace', fontSize: '11px',
+        color: rgbHex(w.color), fontStyle: 'bold',
+      }).setOrigin(0.5);
+    } else {
+      item.label.setVisible(true).setText(w.name).setColor(rgbHex(w.color));
+    }
+  }
+
+  recycleItem(item) {
+    if (item.label) item.label.setVisible(false);
+    item.disableBody(true, true);
   }
 
   onBulletHitEnemy(bullet, enemy) {
     if (!bullet.active || !enemy.active) return;
     const damage = bullet.getData('damage') ?? 1;
-    bullet.destroy();
+    this.recycleBullet(bullet);
     const hp = enemy.getData('hp') - damage;
     if (hp <= 0) {
       const reward = enemy.getData('score') ?? 1;
@@ -407,7 +447,7 @@ export default class GameScene extends Phaser.Scene {
   onBulletHitBox(bullet, box) {
     if (!bullet.active || !box.active) return;
     const damage = bullet.getData('damage') ?? 1;
-    bullet.destroy();
+    this.recycleBullet(bullet);
     const hp = box.getData('hp') - damage;
     if (hp <= 0) {
       const slotIdx = box.getData('slotIdx');
@@ -429,9 +469,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   killEnemy(enemy) {
-    if (enemy.hpBarBg) enemy.hpBarBg.destroy();
-    if (enemy.hpBarFg) enemy.hpBarFg.destroy();
-    enemy.destroy();
+    if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
+    if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
+    enemy.disableBody(true, true);
   }
 
   killBox(box) {
@@ -453,8 +493,7 @@ export default class GameScene extends Phaser.Scene {
     if (!item.active) return;
     const weaponKey = item.getData('weaponKey');
     this.equipWeapon(weaponKey);
-    if (item.label) item.label.destroy();
-    item.destroy();
+    this.recycleItem(item);
   }
 
   equipWeapon(weaponKey) {
@@ -469,8 +508,7 @@ export default class GameScene extends Phaser.Scene {
 
   onSquadHitSquadItem(_member, item) {
     if (!item.active) return;
-    if (item.label) item.label.destroy();
-    item.destroy();
+    this.recycleItem(item);
     this.addSquadMember(SQUAD_ITEM_VALUE);
     this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
   }
@@ -524,7 +562,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.bullets.getChildren().forEach((b) => {
       if (!b.active) return;
-      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30) b.destroy();
+      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30) this.recycleBullet(b);
     });
     this.enemies.getChildren().forEach((e) => {
       if (!e.active) return;
@@ -542,10 +580,7 @@ export default class GameScene extends Phaser.Scene {
         it.label.x = it.x;
         it.label.y = it.y;
       }
-      if (it.y > WORLD_H + 30) {
-        if (it.label) it.label.destroy();
-        it.destroy();
-      }
+      if (it.y > WORLD_H + 30) this.recycleItem(it);
     });
     this.squadItems.getChildren().forEach((it) => {
       if (!it.active) return;
@@ -553,10 +588,7 @@ export default class GameScene extends Phaser.Scene {
         it.label.x = it.x;
         it.label.y = it.y;
       }
-      if (it.y > WORLD_H + 30) {
-        if (it.label) it.label.destroy();
-        it.destroy();
-      }
+      if (it.y > WORLD_H + 30) this.recycleItem(it);
     });
   }
 }
