@@ -4,10 +4,10 @@ const WORLD_W = 540;
 const WORLD_H = 960;
 const PLAYER_Y = WORLD_H * 0.68;
 const PLAYER_SPEED = 800;
-const ENEMY_SPAWN_INTERVAL = 700;
+const ENEMY_SPAWN_INTERVAL = 300;
 const HISCORE_KEY = 'lane-defense:hiscore';
 
-const ZONE_W = WORLD_W * 0.1;
+const ZONE_W = WORLD_W * 0.15;
 const COMBAT_LEFT = ZONE_W;
 const COMBAT_RIGHT = WORLD_W - ZONE_W;
 const PLAYABLE_LEFT = 24;
@@ -17,9 +17,9 @@ const SQUAD_MAX = 12;
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
-  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 140, score: 1, weight: 60 },
-  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 230, score: 2, weight: 25 },
-  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 90, score: 5, weight: 15 },
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 80,  score: 1, weight: 60 },
+  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 140, score: 2, weight: 25 },
+  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 50,  score: 5, weight: 15 },
 ];
 
 function pickEnemyType() {
@@ -54,7 +54,7 @@ const BOX_TYPES = [
 ];
 
 const BOX_X = ZONE_W / 2;
-const BOX_W = 50;
+const BOX_W = 68;
 const BOX_H = 70;
 const BOX_SLOTS_Y = [110, 230, 350, 470];
 const BOX_SLOT_TYPES = ['military', 'reinforced', 'iron', 'wood'];
@@ -307,7 +307,7 @@ export default class GameScene extends Phaser.Scene {
     const x = Phaser.Math.Between(COMBAT_LEFT + 20, COMBAT_RIGHT - 20);
     const type = pickEnemyType();
     const enemy = this.enemies.create(x, -type.radius, type.tex);
-    const speedBoost = Math.min(this.score * 1.2, 160);
+    const speedBoost = Math.min(this.score * 0.6, 90);
     enemy.body.setVelocity(0, type.speed + speedBoost);
     enemy.setData('hp', type.hp);
     enemy.setData('maxHp', type.hp);
