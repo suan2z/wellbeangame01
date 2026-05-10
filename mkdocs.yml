@@ -66,3 +66,4 @@ markdown_extensions:
 nav:
   - 홈: index.md
   - 기획서: 기획서.md
+  - 상자 시스템: 상자.md
