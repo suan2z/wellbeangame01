@@ -4,7 +4,7 @@ const WORLD_W = 540;
 const WORLD_H = 960;
 const PLAYER_Y = WORLD_H * 0.68;
 const PLAYER_SPEED = 800;
-const ENEMY_SPAWN_INTERVAL = 300;
+const ENEMY_SPAWN_INTERVAL = 60;
 const HISCORE_KEY = 'lane-defense:hiscore';
 
 const ZONE_W = WORLD_W * 0.15;
@@ -17,9 +17,9 @@ const SQUAD_MAX = 12;
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
-  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 50, score: 1, weight: 60 },
-  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 70, score: 2, weight: 25 },
-  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 35, score: 5, weight: 15 },
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 45, score: 1, weight: 60 },
+  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 65, score: 2, weight: 25 },
+  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 30, score: 5, weight: 15 },
 ];
 
 function pickEnemyType() {
