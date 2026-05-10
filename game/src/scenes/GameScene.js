@@ -4,10 +4,12 @@ const WORLD_W = 540;
 const WORLD_H = 960;
 const PLAYER_Y = WORLD_H - 140;
 const PLAYER_SPEED = 800;
-const BULLET_SPEED = 700;
-const BULLET_INTERVAL = 180;
 const ENEMY_SPAWN_INTERVAL = 700;
 const HISCORE_KEY = 'lane-defense:hiscore';
+
+const SQUAD_MAX = 8;
+const SQUAD_SPACING = 28;
+const SQUAD_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
   { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 140, score: 1, weight: 60 },
@@ -25,26 +27,36 @@ function pickEnemyType() {
   return ENEMY_TYPES[0];
 }
 
+const WEAPONS = [
+  { key: 'pistol',  name: '권총',     damage: 1, interval: 400, speed: 700, count: 1, spread: 0,  color: 0xffe066 },
+  { key: 'smg',     name: '기관단총', damage: 1, interval: 150, speed: 700, count: 1, spread: 0,  color: 0x4cffc2 },
+  { key: 'shotgun', name: '샷건',     damage: 1, interval: 600, speed: 620, count: 5, spread: 35, color: 0xff9933 },
+  { key: 'rifle',   name: '라이플',   damage: 3, interval: 350, speed: 850, count: 1, spread: 0,  color: 0x4cc2ff },
+  { key: 'mg',      name: '기관총',   damage: 2, interval: 100, speed: 700, count: 1, spread: 0,  color: 0xff5577 },
+];
+
+const STARTING_WEAPON_KEY = 'pistol';
+
+const SQUAD_BONUSES = [
+  { value: 1, label: '+1명' },
+  { value: 2, label: '+2명' },
+  { value: 3, label: '+3명' },
+];
+
+const SQUAD_PANEL_COLOR = 0x3ad27a;
+
+function getWeapon(key) {
+  return WEAPONS.find((w) => w.key === key) ?? WEAPONS[0];
+}
+
 const LANE_COUNT = 3;
 const LANE_W = WORLD_W / LANE_COUNT;
 const LANE_X = [LANE_W * 0.5, LANE_W * 1.5, LANE_W * 2.5];
 
-const FIREPOWER_MAX = 16;
 const GATE_SPEED = 110;
 const GATE_SPAWN_INTERVAL = 6000;
 const GATE_PANEL_W = LANE_W * 0.9;
-const GATE_PANEL_H = 80;
-
-const GATE_OP_POOL = [
-  { op: 'add', value: 1, label: '+1', color: 0x3ad27a },
-  { op: 'add', value: 2, label: '+2', color: 0x3ad27a },
-  { op: 'mul', value: 2, label: '×2', color: 0x4cc2ff },
-];
-
-function applyOp(power, op, value) {
-  const next = op === 'mul' ? power * value : power + value;
-  return Phaser.Math.Clamp(Math.floor(next), 1, FIREPOWER_MAX);
-}
+const GATE_PANEL_H = 90;
 
 function laneFromPointerX(x) {
   const idx = Math.floor(x / LANE_W);
@@ -67,20 +79,23 @@ function saveHiScore(score) {
   } catch {}
 }
 
+function rgbHex(n) {
+  return '#' + n.toString(16).padStart(6, '0');
+}
+
 export default class GameScene extends Phaser.Scene {
   constructor() {
     super('GameScene');
   }
 
   preload() {
-    this.makeTriangleTexture('tex_player', 48, 48, 0x4cc2ff);
-    this.makeRectTexture('tex_bullet', 6, 18, 0xffe066);
+    this.makeTriangleTexture('tex_player', 40, 40, 0x4cc2ff);
+    this.makeCircleTexture('tex_bullet', 5, 0xffffff);
     this.makeCircleTexture('tex_star', 2, 0xffffff);
     for (const t of ENEMY_TYPES) {
       this.makeCircleTexture(t.tex, t.radius, t.color);
     }
-    this.makeRectTexture('tex_panel_add', GATE_PANEL_W, GATE_PANEL_H, 0x3ad27a);
-    this.makeRectTexture('tex_panel_mul', GATE_PANEL_W, GATE_PANEL_H, 0x4cc2ff);
+    this.makeRectTexture('tex_panel', GATE_PANEL_W, GATE_PANEL_H, 0xffffff);
     this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
     this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
   }
@@ -114,7 +129,8 @@ export default class GameScene extends Phaser.Scene {
     this.hiScore = loadHiScore();
     this.gameOver = false;
     this.currentLane = 1;
-    this.firepower = 1;
+    this.weapon = getWeapon(STARTING_WEAPON_KEY);
+    this.invulnUntil = 0;
 
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
     for (let i = 0; i < 60; i++) {
@@ -132,19 +148,18 @@ export default class GameScene extends Phaser.Scene {
       0x4cc2ff, 0.05,
     );
 
-    this.player = this.physics.add.sprite(LANE_X[this.currentLane], PLAYER_Y, 'tex_player');
-    this.player.setCollideWorldBounds(true);
-    this.player.body.setSize(40, 40);
-
-    this.targetX = this.player.x;
+    this.targetX = LANE_X[this.currentLane];
+    this.squadGroup = this.physics.add.group();
+    this.squad = [];
+    this.addSquadMember();
 
     this.bullets = this.physics.add.group();
     this.enemies = this.physics.add.group();
     this.panels = this.physics.add.group();
 
     this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy, null, this);
-    this.physics.add.overlap(this.player, this.enemies, this.onPlayerHit, null, this);
-    this.physics.add.overlap(this.player, this.panels, this.onPlayerHitPanel, null, this);
+    this.physics.add.overlap(this.squadGroup, this.enemies, this.onSquadHitEnemy, null, this);
+    this.physics.add.overlap(this.squadGroup, this.panels, this.onSquadHitPanel, null, this);
 
     this.input.on('pointerdown', this.onPointer, this);
     this.input.on('pointermove', this.onPointer, this);
@@ -161,24 +176,26 @@ export default class GameScene extends Phaser.Scene {
       color: '#ffe066',
     }).setOrigin(1, 0);
 
-    this.powerText = this.add.text(WORLD_W / 2, 24, `POWER ${this.firepower}`, {
+    this.weaponText = this.add.text(WORLD_W / 2, 20, this.weapon.name, {
       fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#4cc2ff',
+      fontSize: '22px',
+      color: rgbHex(this.weapon.color),
+      fontStyle: 'bold',
     }).setOrigin(0.5, 0);
 
-    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '터치한 레인으로 이동 · 게이트 통과로 강해진다', {
+    this.squadText = this.add.text(WORLD_W / 2, 48, `부대원 ${this.squad.length}`, {
       fontFamily: 'monospace',
-      fontSize: '18px',
+      fontSize: '16px',
+      color: '#3ad27a',
+    }).setOrigin(0.5, 0);
+
+    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 50, '터치한 레인으로 이동 · 게이트로 무기/병력 확보', {
+      fontFamily: 'monospace',
+      fontSize: '16px',
       color: '#ffffff80',
     }).setOrigin(0.5);
 
-    this.shootEvent = this.time.addEvent({
-      delay: BULLET_INTERVAL,
-      loop: true,
-      callback: this.shoot,
-      callbackScope: this,
-    });
+    this.startShootTimer();
 
     this.spawnEvent = this.time.addEvent({
       delay: ENEMY_SPAWN_INTERVAL,
@@ -191,6 +208,58 @@ export default class GameScene extends Phaser.Scene {
       delay: GATE_SPAWN_INTERVAL,
       loop: true,
       callback: this.spawnGate,
+      callbackScope: this,
+    });
+  }
+
+  addSquadMember(count = 1) {
+    const before = this.squad.length;
+    for (let i = 0; i < count; i++) {
+      if (this.squad.length >= SQUAD_MAX) break;
+      const m = this.physics.add.sprite(this.targetX, PLAYER_Y, 'tex_player');
+      m.body.setSize(32, 32);
+      m.setData('alive', true);
+      this.squadGroup.add(m);
+      this.squad.push(m);
+    }
+    if (this.squad.length !== before) this.layoutSquad();
+    if (this.squadText) this.squadText.setText(`부대원 ${this.squad.length}`);
+  }
+
+  layoutSquad() {
+    const N = this.squad.length;
+    const total = (N - 1) * SQUAD_SPACING;
+    this.squad.forEach((m, i) => {
+      m.setData('offsetX', i * SQUAD_SPACING - total / 2);
+    });
+  }
+
+  loseSquadMember(member) {
+    const idx = this.squad.indexOf(member);
+    if (idx < 0) return;
+    this.squad.splice(idx, 1);
+    member.destroy();
+    this.layoutSquad();
+    this.squadText.setText(`부대원 ${this.squad.length}`);
+    this.tweens.add({
+      targets: this.squadText,
+      scale: { from: 1.4, to: 1 },
+      duration: 200,
+    });
+    this.invulnUntil = this.time.now + SQUAD_INVULN_MS;
+    this.squad.forEach((m) => m.setAlpha(0.5));
+    this.time.delayedCall(SQUAD_INVULN_MS, () => {
+      this.squad.forEach((m) => m.setAlpha(1));
+    });
+    if (this.squad.length === 0) this.endGame();
+  }
+
+  startShootTimer() {
+    if (this.shootEvent) this.shootEvent.remove();
+    this.shootEvent = this.time.addEvent({
+      delay: this.weapon.interval,
+      loop: true,
+      callback: this.shoot,
       callbackScope: this,
     });
   }
@@ -210,13 +279,20 @@ export default class GameScene extends Phaser.Scene {
 
   shoot() {
     if (this.gameOver) return;
-    const n = this.firepower;
-    const spreadStep = 10;
-    const totalWidth = (n - 1) * spreadStep;
-    const startX = this.player.x - totalWidth / 2;
-    for (let i = 0; i < n; i++) {
-      const bullet = this.bullets.create(startX + i * spreadStep, this.player.y - 24, 'tex_bullet');
-      bullet.body.setVelocity(0, -BULLET_SPEED);
+    const w = this.weapon;
+    for (const member of this.squad) {
+      if (!member.active) continue;
+      for (let i = 0; i < w.count; i++) {
+        const t = w.count > 1 ? (i / (w.count - 1)) - 0.5 : 0;
+        const angleDeg = -90 + t * w.spread;
+        const rad = Phaser.Math.DegToRad(angleDeg);
+        const vx = Math.cos(rad) * w.speed;
+        const vy = Math.sin(rad) * w.speed;
+        const bullet = this.bullets.create(member.x, member.y - 22, 'tex_bullet');
+        bullet.setTint(w.color);
+        bullet.body.setVelocity(vx, vy);
+        bullet.setData('damage', w.damage);
+      }
     }
   }
 
@@ -243,35 +319,62 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  buildGateOptions() {
+    const weaponOpts = WEAPONS
+      .filter((w) => w.key !== this.weapon.key)
+      .map((w) => ({ kind: 'weapon', weapon: w }));
+    const squadOpts = SQUAD_BONUSES.map((b) => ({ kind: 'squad', value: b.value, label: b.label }));
+    return [...weaponOpts, ...squadOpts];
+  }
+
   spawnGate() {
     if (this.gameOver) return;
+    const opts = this.buildGateOptions();
+    const picks = Phaser.Utils.Array.Shuffle([...opts]).slice(0, 2);
     const lanes = Phaser.Utils.Array.Shuffle([0, 1, 2]).slice(0, 2);
-    const optionPool = Phaser.Utils.Array.Shuffle([...GATE_OP_POOL]).slice(0, 2);
     const gateId = `g${this.time.now}`;
 
     lanes.forEach((lane, i) => {
-      const def = optionPool[i];
-      const tex = def.op === 'mul' ? 'tex_panel_mul' : 'tex_panel_add';
-      const panel = this.panels.create(LANE_X[lane], -GATE_PANEL_H / 2, tex);
+      const def = picks[i];
+      const panel = this.panels.create(LANE_X[lane], -GATE_PANEL_H / 2, 'tex_panel');
+      panel.setAlpha(0.85);
       panel.body.setVelocity(0, GATE_SPEED);
       panel.setData('gateId', gateId);
-      panel.setData('op', def.op);
-      panel.setData('value', def.value);
-      panel.setAlpha(0.85);
+      panel.setData('def', def);
 
-      const label = this.add.text(panel.x, panel.y, def.label, {
-        fontFamily: 'monospace',
-        fontSize: '36px',
+      let nameText, statText, color;
+      if (def.kind === 'weapon') {
+        color = def.weapon.color;
+        nameText = def.weapon.name;
+        statText = `DMG ${def.weapon.damage} · ${def.weapon.interval}ms${def.weapon.count > 1 ? ` ×${def.weapon.count}` : ''}`;
+      } else {
+        color = SQUAD_PANEL_COLOR;
+        nameText = def.label;
+        statText = '부대원 충원';
+      }
+      panel.setTint(color);
+
+      const labelName = this.add.text(panel.x, panel.y - 14, nameText, {
+        fontFamily: 'sans-serif',
+        fontSize: '24px',
         color: '#ffffff',
         fontStyle: 'bold',
       }).setOrigin(0.5);
-      panel.label = label;
+      const labelStat = this.add.text(panel.x, panel.y + 14, statText, {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#ffffffcc',
+      }).setOrigin(0.5);
+      panel.labelName = labelName;
+      panel.labelStat = labelStat;
     });
   }
 
   onBulletHitEnemy(bullet, enemy) {
+    if (!bullet.active || !enemy.active) return;
+    const damage = bullet.getData('damage') ?? 1;
     bullet.destroy();
-    const hp = enemy.getData('hp') - 1;
+    const hp = enemy.getData('hp') - damage;
     if (hp <= 0) {
       const reward = enemy.getData('score') ?? 1;
       this.killEnemy(enemy);
@@ -299,24 +402,34 @@ export default class GameScene extends Phaser.Scene {
     enemy.destroy();
   }
 
-  onPlayerHit() {
+  onSquadHitEnemy(member, enemy) {
     if (this.gameOver) return;
-    this.endGame();
+    if (!member.active || !enemy.active) return;
+    if (this.time.now < this.invulnUntil) return;
+    this.killEnemy(enemy);
+    this.loseSquadMember(member);
   }
 
-  onPlayerHitPanel(_player, panel) {
+  onSquadHitPanel(_member, panel) {
     if (this.gameOver) return;
     if (!panel.active) return;
-    const op = panel.getData('op');
-    const value = panel.getData('value');
+    const def = panel.getData('def');
     const gateId = panel.getData('gateId');
 
-    const before = this.firepower;
-    this.firepower = applyOp(this.firepower, op, value);
-    this.powerText.setText(`POWER ${this.firepower}`);
-    if (this.firepower !== before) {
+    if (def.kind === 'weapon' && def.weapon.key !== this.weapon.key) {
+      this.weapon = def.weapon;
+      this.weaponText.setText(this.weapon.name);
+      this.weaponText.setColor(rgbHex(this.weapon.color));
       this.tweens.add({
-        targets: this.powerText,
+        targets: this.weaponText,
+        scale: { from: 1.6, to: 1 },
+        duration: 250,
+      });
+      this.startShootTimer();
+    } else if (def.kind === 'squad') {
+      this.addSquadMember(def.value);
+      this.tweens.add({
+        targets: this.squadText,
         scale: { from: 1.6, to: 1 },
         duration: 250,
       });
@@ -324,7 +437,8 @@ export default class GameScene extends Phaser.Scene {
 
     this.panels.getChildren().slice().forEach((p) => {
       if (p.getData('gateId') === gateId) {
-        if (p.label) p.label.destroy();
+        if (p.labelName) p.labelName.destroy();
+        if (p.labelStat) p.labelStat.destroy();
         p.destroy();
       }
     });
@@ -332,9 +446,9 @@ export default class GameScene extends Phaser.Scene {
 
   endGame() {
     this.gameOver = true;
-    this.shootEvent.remove();
-    this.spawnEvent.remove();
-    this.gateEvent.remove();
+    if (this.shootEvent) this.shootEvent.remove();
+    if (this.spawnEvent) this.spawnEvent.remove();
+    if (this.gateEvent) this.gateEvent.remove();
     this.physics.pause();
 
     saveHiScore(this.hiScore);
@@ -375,12 +489,19 @@ export default class GameScene extends Phaser.Scene {
   update(_, deltaMs) {
     if (this.gameOver) return;
     const dt = deltaMs / 1000;
-    const dx = this.targetX - this.player.x;
-    const step = Phaser.Math.Clamp(dx, -PLAYER_SPEED * dt, PLAYER_SPEED * dt);
-    this.player.x += step;
+    const maxStep = PLAYER_SPEED * dt;
+
+    this.squad.forEach((m) => {
+      if (!m.active) return;
+      const wantX = this.targetX + (m.getData('offsetX') ?? 0);
+      const dx = wantX - m.x;
+      m.x += Phaser.Math.Clamp(dx, -maxStep, maxStep);
+      m.y = PLAYER_Y;
+    });
 
     this.bullets.getChildren().forEach((b) => {
-      if (b.active && b.y < -30) b.destroy();
+      if (!b.active) return;
+      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30) b.destroy();
     });
     this.enemies.getChildren().forEach((e) => {
       if (!e.active) return;
@@ -394,12 +515,17 @@ export default class GameScene extends Phaser.Scene {
     });
     this.panels.getChildren().forEach((p) => {
       if (!p.active) return;
-      if (p.label) {
-        p.label.x = p.x;
-        p.label.y = p.y;
+      if (p.labelName) {
+        p.labelName.x = p.x;
+        p.labelName.y = p.y - 14;
+      }
+      if (p.labelStat) {
+        p.labelStat.x = p.x;
+        p.labelStat.y = p.y + 14;
       }
       if (p.y > WORLD_H + GATE_PANEL_H) {
-        if (p.label) p.label.destroy();
+        if (p.labelName) p.labelName.destroy();
+        if (p.labelStat) p.labelStat.destroy();
         p.destroy();
       }
     });
