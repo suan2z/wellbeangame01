@@ -17,10 +17,19 @@ const SQUAD_MAX = 12;
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
-  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 45, score: 1, weight: 60 },
-  { key: 'runner', tex: 'tex_enemy_runner', radius: 14, color: 0x4cffc2, hp: 1, speed: 65, score: 2, weight: 25 },
-  { key: 'tanker', tex: 'tex_enemy_tanker', radius: 32, color: 0xa1356b, hp: 5, speed: 30, score: 5, weight: 15 },
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 30, score: 1, weight: 100 },
 ];
+
+const BOSS_STAGES = [
+  { stage: 1, tex: 'tex_boss_1', radius: 45, color: 0xff9933, hp: 50,  speed: 30, score: 30 },
+  { stage: 2, tex: 'tex_boss_2', radius: 55, color: 0xff5577, hp: 100, speed: 30, score: 60 },
+  { stage: 3, tex: 'tex_boss_3', radius: 65, color: 0x9933ff, hp: 200, speed: 30, score: 120 },
+  { stage: 4, tex: 'tex_boss_4', radius: 75, color: 0x4c4cff, hp: 400, speed: 30, score: 240 },
+  { stage: 5, tex: 'tex_boss_5', radius: 90, color: 0x222222, hp: 800, speed: 30, score: 500 },
+];
+
+const BOSS_INITIAL_DELAY_MS = 15000;
+const BOSS_RESPAWN_DELAY_MS = 10000;
 
 function pickEnemyType() {
   const total = ENEMY_TYPES.reduce((s, t) => s + t.weight, 0);
@@ -114,6 +123,9 @@ export default class GameScene extends Phaser.Scene {
     for (const t of ENEMY_TYPES) {
       this.makeCircleTexture(t.tex, t.radius, t.color);
     }
+    for (const b of BOSS_STAGES) {
+      this.makeCircleTexture(b.tex, b.radius, b.color);
+    }
     for (const b of BOX_TYPES) {
       this.makeRectTexture(`tex_box_${b.key}`, BOX_W, BOX_H, b.color);
     }
@@ -154,6 +166,8 @@ export default class GameScene extends Phaser.Scene {
     this.weapon = getWeapon(STARTING_WEAPON_KEY);
     this.invulnUntil = 0;
     this.targetX = WORLD_W / 2;
+    this.currentBossStage = 0;
+    this.activeBoss = null;
 
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
     for (let i = 0; i < 60; i++) {
@@ -211,6 +225,9 @@ export default class GameScene extends Phaser.Scene {
     this.squadText = this.add.text(WORLD_W / 2, 44, `부대원 ${this.squad.length}`, {
       fontFamily: 'monospace', fontSize: '14px', color: '#3ad27a',
     }).setOrigin(0.5, 0);
+    this.bossText = this.add.text(WORLD_W / 2, 68, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ff9933', fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
 
     this.add.rectangle(WORLD_W / 2, (PLAYER_Y + WORLD_H) / 2 + 20, WORLD_W, WORLD_H - PLAYER_Y - 60, 0xffffff, 0.02);
     this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60, '드래그로 이동 · 좌측 상자 = 무기 · 우측 = 부대원 +1', {
@@ -239,6 +256,46 @@ export default class GameScene extends Phaser.Scene {
       callback: this.spawnSquadItem,
       callbackScope: this,
     });
+
+    this.time.delayedCall(BOSS_INITIAL_DELAY_MS, () => this.spawnNextBoss());
+  }
+
+  spawnNextBoss() {
+    if (this.gameOver) return;
+    if (this.activeBoss) return;
+    const nextStage = this.currentBossStage + 1;
+    if (nextStage > BOSS_STAGES.length) {
+      this.bossText.setText('보스 클리어!');
+      return;
+    }
+    this.currentBossStage = nextStage;
+    const def = BOSS_STAGES[nextStage - 1];
+    const x = WORLD_W / 2;
+    const boss = this.enemies.get(x, -def.radius, def.tex);
+    if (!boss) return;
+    boss.setTexture(def.tex);
+    boss.enableBody(true, x, -def.radius, true, true);
+    boss.body.setSize(def.radius * 2, def.radius * 2, true);
+    boss.body.setVelocity(0, def.speed);
+    boss.setData('hp', def.hp);
+    boss.setData('maxHp', def.hp);
+    boss.setData('score', def.score);
+    boss.setData('typeKey', 'boss');
+    boss.setData('bossStage', def.stage);
+
+    if (boss.hpBarBg) { boss.hpBarBg.destroy(); boss.hpBarBg = null; }
+    if (boss.hpBarFg) { boss.hpBarFg.destroy(); boss.hpBarFg = null; }
+    const barW = def.radius * 2;
+    const barBg = this.add.image(boss.x, boss.y - def.radius - 10, 'tex_hpbar_bg').setDisplaySize(barW, 8);
+    const barFg = this.add.image(boss.x - barW / 2, boss.y - def.radius - 10, 'tex_hpbar_fg')
+      .setDisplaySize(barW, 8).setOrigin(0, 0.5);
+    boss.hpBarBg = barBg;
+    boss.hpBarFg = barFg;
+    boss.hpBarW = barW;
+
+    this.activeBoss = boss;
+    this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length} (HP ${def.hp})`);
+    this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
   }
 
   addSquadMember(count = 1) {
@@ -340,24 +397,15 @@ export default class GameScene extends Phaser.Scene {
     enemy.setTexture(type.tex);
     enemy.enableBody(true, x, -type.radius, true, true);
     enemy.body.setSize(type.radius * 2, type.radius * 2, true);
-    const speedBoost = Math.min(this.score * 0.3, 40);
-    enemy.body.setVelocity(0, type.speed + speedBoost);
+    enemy.body.setVelocity(0, type.speed);
     enemy.setData('hp', type.hp);
     enemy.setData('maxHp', type.hp);
     enemy.setData('score', type.score);
     enemy.setData('typeKey', type.key);
+    enemy.setData('bossStage', 0);
 
     if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
     if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
-    if (type.hp > 1) {
-      const barW = type.radius * 1.8;
-      const barBg = this.add.image(enemy.x, enemy.y - type.radius - 8, 'tex_hpbar_bg').setDisplaySize(barW, 6);
-      const barFg = this.add.image(enemy.x - barW / 2, enemy.y - type.radius - 8, 'tex_hpbar_fg')
-        .setDisplaySize(barW, 6).setOrigin(0, 0.5);
-      enemy.hpBarBg = barBg;
-      enemy.hpBarFg = barFg;
-      enemy.hpBarW = barW;
-    }
   }
 
   spawnBox(slotIdx, type) {
@@ -441,6 +489,7 @@ export default class GameScene extends Phaser.Scene {
     const hp = enemy.getData('hp') - damage;
     if (hp <= 0) {
       const reward = enemy.getData('score') ?? 1;
+      const wasBoss = enemy === this.activeBoss;
       this.killEnemy(enemy);
       this.score += reward;
       this.scoreText.setText(`SCORE ${this.score}`);
@@ -448,9 +497,23 @@ export default class GameScene extends Phaser.Scene {
         this.hiScore = this.score;
         this.hiScoreText.setText(`BEST ${this.hiScore}`);
       }
+      if (wasBoss) {
+        this.activeBoss = null;
+        const more = this.currentBossStage < BOSS_STAGES.length;
+        if (more) {
+          this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
+          this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
+        } else {
+          this.bossText.setText('보스 클리어!');
+        }
+      }
     } else {
       enemy.setData('hp', hp);
       this.refreshHpBar(enemy);
+      if (enemy === this.activeBoss) {
+        const def = BOSS_STAGES[this.currentBossStage - 1];
+        this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length} (HP ${hp}/${def.hp})`);
+      }
     }
   }
 
@@ -495,8 +558,20 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     if (!member.active || !enemy.active) return;
     if (this.time.now < this.invulnUntil) return;
-    this.killEnemy(enemy);
+    const isBoss = enemy === this.activeBoss;
+    if (!isBoss) this.killEnemy(enemy);
     this.loseSquadMember(member);
+  }
+
+  onBossEscape(boss) {
+    this.activeBoss = null;
+    if (this.currentBossStage < BOSS_STAGES.length) {
+      this.bossText.setText(`보스 탈출! 다음 ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
+      this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
+    } else {
+      this.bossText.setText('보스 클리어!');
+    }
+    this.killEnemy(boss);
   }
 
   onSquadHitWeaponItem(_member, item) {
@@ -601,7 +676,10 @@ export default class GameScene extends Phaser.Scene {
         e.hpBarFg.x = e.x - e.hpBarW / 2;
         e.hpBarFg.y = e.hpBarBg.y;
       }
-      if (e.y > WORLD_H + 30) this.killEnemy(e);
+      if (e.y > WORLD_H + 30) {
+        if (e === this.activeBoss) this.onBossEscape(e);
+        else this.killEnemy(e);
+      }
     });
     this.weaponItems.getChildren().forEach((it) => {
       if (!it.active) return;
