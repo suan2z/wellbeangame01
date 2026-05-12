@@ -289,6 +289,16 @@ export default class GameScene extends Phaser.Scene {
 
   onPointer(pointer) {
     if (!pointer.isDown) return;
+    if (this.gameOver) {
+      if (this.restartBounds) {
+        const r = this.restartBounds;
+        if (pointer.x >= r.x && pointer.x <= r.x + r.w &&
+            pointer.y >= r.y && pointer.y <= r.y + r.h) {
+          this.scene.restart();
+        }
+      }
+      return;
+    }
     this.targetX = Phaser.Math.Clamp(pointer.x, PLAYABLE_LEFT, PLAYABLE_RIGHT);
     if (this.hintText.alpha > 0) {
       this.tweens.add({ targets: this.hintText, alpha: 0, duration: 400 });
@@ -539,10 +549,29 @@ export default class GameScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    const btn = this.add.text(WORLD_W / 2, WORLD_H / 2 + 110, '[ 다시하기 ]', {
-      fontFamily: 'monospace', fontSize: '32px', color: '#4cc2ff',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    btn.on('pointerdown', () => this.scene.restart());
+    const btnY = WORLD_H / 2 + 140;
+    const btnW = 320;
+    const btnH = 96;
+    const btnBg = this.add.rectangle(WORLD_W / 2, btnY, btnW, btnH, 0x4cc2ff, 0.35)
+      .setStrokeStyle(5, 0xffffff, 1);
+    this.add.text(WORLD_W / 2, btnY, '▶ 다시하기', {
+      fontFamily: 'sans-serif', fontSize: '40px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: btnBg,
+      alpha: { from: 1, to: 0.55 },
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    this.restartBounds = {
+      x: WORLD_W / 2 - btnW / 2,
+      y: btnY - btnH / 2,
+      w: btnW,
+      h: btnH,
+    };
   }
 
   update(_, deltaMs) {
