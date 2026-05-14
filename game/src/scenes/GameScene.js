@@ -21,15 +21,15 @@ const ENEMY_TYPES = [
 ];
 
 const BOSS_STAGES = [
-  { stage: 1, tex: 'tex_boss_1', radius: 45, color: 0xff9933, hp: 50,  speed: 30, score: 30 },
-  { stage: 2, tex: 'tex_boss_2', radius: 55, color: 0xff5577, hp: 100, speed: 30, score: 60 },
-  { stage: 3, tex: 'tex_boss_3', radius: 65, color: 0x9933ff, hp: 200, speed: 30, score: 120 },
-  { stage: 4, tex: 'tex_boss_4', radius: 75, color: 0x4c4cff, hp: 400, speed: 30, score: 240 },
-  { stage: 5, tex: 'tex_boss_5', radius: 90, color: 0x222222, hp: 800, speed: 30, score: 500 },
+  { stage: 1, tex: 'tex_boss_1', radius: 45, color: 0xff9933, hp: 50,  speed: 30, score: 50 },
+  { stage: 2, tex: 'tex_boss_2', radius: 55, color: 0xff5577, hp: 100, speed: 30, score: 100 },
+  { stage: 3, tex: 'tex_boss_3', radius: 65, color: 0x9933ff, hp: 200, speed: 30, score: 250 },
+  { stage: 4, tex: 'tex_boss_4', radius: 75, color: 0x4c4cff, hp: 400, speed: 30, score: 500 },
+  { stage: 5, tex: 'tex_boss_5', radius: 90, color: 0x222222, hp: 800, speed: 30, score: 1000 },
 ];
 
-const BOSS_INITIAL_DELAY_MS = 15000;
-const BOSS_RESPAWN_DELAY_MS = 10000;
+const BOSS_INITIAL_DELAY_MS = 10000;
+const BOSS_RESPAWN_DELAY_MS = 5000;
 
 function pickEnemyType() {
   const total = ENEMY_TYPES.reduce((s, t) => s + t.weight, 0);
@@ -42,7 +42,7 @@ function pickEnemyType() {
 }
 
 const WEAPONS = [
-  { key: 'pistol',  name: '권총',     damage: 1, interval: 400, speed: 700, count: 1, spread: 0,  color: 0xffe066 },
+  { key: 'pistol',  name: '권총',     damage: 1, interval: 300, speed: 700, count: 1, spread: 0,  color: 0xffe066 },
   { key: 'smg',     name: '기관단총', damage: 1, interval: 150, speed: 700, count: 1, spread: 0,  color: 0x4cffc2 },
   { key: 'shotgun', name: '샷건',     damage: 1, interval: 600, speed: 620, count: 5, spread: 35, color: 0xff9933 },
   { key: 'rifle',   name: '라이플',   damage: 3, interval: 350, speed: 850, count: 1, spread: 0,  color: 0x4cc2ff },
@@ -74,9 +74,10 @@ function getBoxType(key) {
 }
 
 const SQUAD_ITEM_X = WORLD_W - ZONE_W / 2;
-const SQUAD_ITEM_SPAWN_MS = 4500;
+const SQUAD_ITEM_SPAWN_MS = 3000;
 const SQUAD_ITEM_FALL_SPEED = 90;
-const SQUAD_ITEM_VALUE = 1;
+const SQUAD_ITEM_VALUES = [1, 1, 2, 2, 3];
+const STARTING_SQUAD = 3;
 
 const WEAPON_ITEM_FALL_SPEED = 70;
 
@@ -183,7 +184,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.squadGroup = this.physics.add.group();
     this.squad = [];
-    this.addSquadMember();
+    this.addSquadMember(STARTING_SQUAD);
 
     this.bullets = this.physics.add.group({
       defaultKey: 'tex_bullet',
@@ -445,17 +446,20 @@ export default class GameScene extends Phaser.Scene {
   spawnSquadItem() {
     if (this.gameOver) return;
     const active = this.squadItems.getChildren().filter((i) => i.active).length;
-    if (active >= 3) return;
+    if (active >= 5) return;
+    const value = SQUAD_ITEM_VALUES[Phaser.Math.Between(0, SQUAD_ITEM_VALUES.length - 1)];
     const item = this.squadItems.get(SQUAD_ITEM_X, -20, 'tex_squad_item');
     if (!item) return;
     item.enableBody(true, SQUAD_ITEM_X, -20, true, true);
     item.body.setVelocity(0, SQUAD_ITEM_FALL_SPEED);
+    item.setData('value', value);
+    const labelText = `+${value}`;
     if (!item.label) {
-      item.label = this.add.text(item.x, item.y, '+1', {
+      item.label = this.add.text(item.x, item.y, labelText, {
         fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
-      item.label.setVisible(true).setText('+1');
+      item.label.setVisible(true).setText(labelText);
     }
   }
 
@@ -490,6 +494,7 @@ export default class GameScene extends Phaser.Scene {
     if (hp <= 0) {
       const reward = enemy.getData('score') ?? 1;
       const wasBoss = enemy === this.activeBoss;
+      this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.killEnemy(enemy);
       this.score += reward;
       this.scoreText.setText(`SCORE ${this.score}`);
@@ -547,6 +552,22 @@ export default class GameScene extends Phaser.Scene {
     enemy.disableBody(true, true);
   }
 
+  showScorePopup(x, y, points, big = false) {
+    const text = this.add.text(x, y, `+${points}`, {
+      fontFamily: 'monospace',
+      fontSize: big ? '36px' : '16px',
+      color: big ? '#ffe066' : '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: text,
+      y: y - (big ? 80 : 40),
+      alpha: 0,
+      duration: big ? 1200 : 700,
+      onComplete: () => text.destroy(),
+    });
+  }
+
   killBox(box) {
     if (box.hpBarBg) box.hpBarBg.destroy();
     if (box.hpBarFg) box.hpBarFg.destroy();
@@ -593,8 +614,9 @@ export default class GameScene extends Phaser.Scene {
 
   onSquadHitSquadItem(_member, item) {
     if (!item.active) return;
+    const value = item.getData('value') ?? 1;
     this.recycleItem(item);
-    this.addSquadMember(SQUAD_ITEM_VALUE);
+    this.addSquadMember(value);
     this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
   }
 
