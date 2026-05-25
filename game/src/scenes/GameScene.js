@@ -55,83 +55,94 @@ function getWeapon(key) {
   return WEAPONS.find((w) => w.key === key) ?? WEAPONS[0];
 }
 
-const BOX_TYPES = [
-  { key: 'wood',       order: 1, name: '나무 상자',  color: 0xa17c4c, hp: 3,  weaponKey: 'smg' },
-  { key: 'iron',       order: 2, name: '철제 상자',  color: 0x8a8a8a, hp: 8,  weaponKey: 'shotgun' },
-  { key: 'reinforced', order: 3, name: '강화 상자',  color: 0x4a4aa8, hp: 15, weaponKey: 'rifle' },
-  { key: 'military',   order: 4, name: '군용 상자',  color: 0x2a4a2a, hp: 25, weaponKey: 'mg' },
-];
-
-const BOX_X = ZONE_W / 2;
-const BOX_W = 68;
-const BOX_H = 70;
-const BOX_SLOTS_Y = [110, 230, 350, 470];
-const BOX_SLOT_TYPES = ['military', 'reinforced', 'iron', 'wood'];
-const BOX_RESPAWN_MS = 5000;
-
-function getBoxType(key) {
-  return BOX_TYPES.find((b) => b.key === key) ?? BOX_TYPES[0];
-}
-
-const SQUAD_ITEM_X = WORLD_W - ZONE_W / 2;
-const SQUAD_ITEM_SPAWN_MS = 3000;
+// 부대원 아이템: 좌/우 랜덤, 3~5초 간격
+const SQUAD_ITEM_LEFT_X  = ZONE_W / 2;
+const SQUAD_ITEM_RIGHT_X = WORLD_W - ZONE_W / 2;
+const SQUAD_ITEM_SPAWN_MIN_MS = 3000;
+const SQUAD_ITEM_SPAWN_MAX_MS = 5000;
 const SQUAD_ITEM_FALL_SPEED = 90;
-const SQUAD_ITEM_VALUES = [1, 1, 2, 2, 3];
 const STARTING_SQUAD = 3;
 
-const WEAPON_ITEM_FALL_SPEED = 70;
+// 부대원 아이템 종류: -1 / +1 / +2 / ?
+const SQUAD_ITEM_TYPES = [
+  { type: 'minus',    value: -1,   label: '-1', color: 0xff3300, weight: 15 },
+  { type: 'plus1',   value:  1,   label: '+1', color: 0x3ad27a, weight: 40 },
+  { type: 'plus2',   value:  2,   label: '+2', color: 0x44ffaa, weight: 30 },
+  { type: 'question', value: null, label: ' ?', color: 0xffcc00, weight: 15 },
+];
+
+function pickSquadItemType() {
+  const total = SQUAD_ITEM_TYPES.reduce((s, t) => s + t.weight, 0);
+  let r = Phaser.Math.Between(0, total - 1);
+  for (const t of SQUAD_ITEM_TYPES) {
+    if (r < t.weight) return t;
+    r -= t.weight;
+  }
+  return SQUAD_ITEM_TYPES[1];
+}
+
+// 무기 상자: 전투 구역을 3등분한 레인에서 등장
+const COMBAT_ZONE_W = COMBAT_RIGHT - COMBAT_LEFT;
+const LANE_W = COMBAT_ZONE_W / 3;
+const WEAPON_BOX_SPAWN_XS = [
+  COMBAT_LEFT + LANE_W * 0.5,
+  COMBAT_LEFT + LANE_W * 1.5,
+  COMBAT_LEFT + LANE_W * 2.5,
+];
+const WEAPON_BOX_SPAWN_MS   = 10000;
+const WEAPON_BOX_RADIUS     = Math.round(LANE_W * 0.43); // 레인 폭의 약 86%
+const WEAPON_BOX_KILL_RADIUS = WEAPON_BOX_RADIUS + 15;
+const WEAPON_BOX_FALL_SPEED = 100;
+const WEAPON_BOX_BASE_HP    = 5;
+const WEAPON_BOX_HP_SCALE   = 3; // 단계당 증가량
+
+// 30초마다 단계 상승 → 무기 상자 체력 증가
+const STAGE_ADVANCE_MS = 30000;
+
+const WEAPON_PICKUP_RADIUS    = 16;
+const WEAPON_PICKUP_FALL_SPEED = 70;
 
 function loadHiScore() {
   try {
     const raw = globalThis.localStorage?.getItem(HISCORE_KEY);
     const n = raw ? parseInt(raw, 10) : 0;
     return Number.isFinite(n) && n >= 0 ? n : 0;
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 function saveHiScore(score) {
-  try {
-    globalThis.localStorage?.setItem(HISCORE_KEY, String(score));
-  } catch {}
+  try { globalThis.localStorage?.setItem(HISCORE_KEY, String(score)); } catch {}
 }
 
 function rgbHex(n) {
   return '#' + n.toString(16).padStart(6, '0');
 }
 
+// 해바라기(phyllotaxis) 패턴: 원 안에 균등 분포
 function squadOffsets(N) {
   if (N <= 0) return [];
   if (N === 1) return [{ x: 0, y: 0 }];
-  if (N === 2) return [{ x: -14, y: 0 }, { x: 14, y: 0 }];
-  const r = Math.min(8 + N * 2.5, 32);
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const R = Math.sqrt(N) * 13;
   return Array.from({ length: N }, (_, i) => {
-    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
-    return { x: Math.cos(a) * r, y: Math.sin(a) * r };
+    const r = Math.sqrt((i + 0.5) / N) * R;
+    const theta = i * goldenAngle;
+    return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
   });
 }
 
 export default class GameScene extends Phaser.Scene {
-  constructor() {
-    super('GameScene');
-  }
+  constructor() { super('GameScene'); }
 
   preload() {
     this.makeTriangleTexture('tex_player', 36, 36, 0x4cc2ff);
     this.makeCircleTexture('tex_bullet', 5, 0xffffff);
     this.makeCircleTexture('tex_star', 2, 0xffffff);
-    for (const t of ENEMY_TYPES) {
-      this.makeCircleTexture(t.tex, t.radius, t.color);
-    }
-    for (const b of BOSS_STAGES) {
-      this.makeCircleTexture(b.tex, b.radius, b.color);
-    }
-    for (const b of BOX_TYPES) {
-      this.makeRectTexture(`tex_box_${b.key}`, BOX_W, BOX_H, b.color);
-    }
-    this.makeCircleTexture('tex_weapon_item', 14, 0xffffff);
-    this.makeCircleTexture('tex_squad_item', 18, 0x3ad27a);
+    for (const t of ENEMY_TYPES) this.makeCircleTexture(t.tex, t.radius, t.color);
+    for (const b of BOSS_STAGES)  this.makeCircleTexture(b.tex, b.radius, b.color);
+    this.makeCircleTexture('tex_squad_item',    18,                  0xffffff);
+    this.makeCircleTexture('tex_weapon_box',    WEAPON_BOX_RADIUS,   0xff2200);
+    this.makeCircleTexture('tex_weapon_pickup', WEAPON_PICKUP_RADIUS, 0xffffff);
     this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
     this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
   }
@@ -161,143 +172,189 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
-    this.score = 0;
-    this.hiScore = loadHiScore();
-    this.gameOver = false;
-    this.weapon = getWeapon(STARTING_WEAPON_KEY);
-    this.invulnUntil = 0;
-    this.targetX = WORLD_W / 2;
+    this.score        = 0;
+    this.hiScore      = loadHiScore();
+    this.gameOver     = false;
+    this.weapon       = getWeapon(STARTING_WEAPON_KEY);
+    this.invulnUntil  = 0;
+    this.targetX      = WORLD_W / 2;
     this.currentBossStage = 0;
-    this.activeBoss = null;
+    this.activeBoss   = null;
+    this.bossRound    = 0;
+    this.gameStage    = 0;
 
+    // 배경
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
     for (let i = 0; i < 60; i++) {
-      const x = Phaser.Math.Between(0, WORLD_W);
-      const y = Phaser.Math.Between(0, WORLD_H);
-      this.add.image(x, y, 'tex_star').setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
+      this.add.image(
+        Phaser.Math.Between(0, WORLD_W),
+        Phaser.Math.Between(0, WORLD_H),
+        'tex_star'
+      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
     }
 
-    this.add.rectangle(ZONE_W / 2, WORLD_H / 2, ZONE_W, WORLD_H, 0x4a4a8a, 0.10);
-    this.add.rectangle(WORLD_W - ZONE_W / 2, WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.10);
-    this.add.rectangle(COMBAT_LEFT, WORLD_H / 2, 1, WORLD_H, 0xffffff, 0.18);
+    // 좌우 영역 (초록 = 부대원 증가)
+    this.add.rectangle(ZONE_W / 2,            WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.10);
+    this.add.rectangle(WORLD_W - ZONE_W / 2,  WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.10);
+    this.add.rectangle(COMBAT_LEFT,  WORLD_H / 2, 1, WORLD_H, 0xffffff, 0.18);
     this.add.rectangle(COMBAT_RIGHT, WORLD_H / 2, 1, WORLD_H, 0xffffff, 0.18);
 
-    this.squadGroup = this.physics.add.group();
-    this.squad = [];
+    // 물리 그룹
+    this.squadGroup   = this.physics.add.group();
+    this.squad        = [];
     this.addSquadMember(STARTING_SQUAD);
 
-    this.bullets = this.physics.add.group({
-      defaultKey: 'tex_bullet',
-      maxSize: 400,
-    });
-    this.enemies = this.physics.add.group({
-      defaultKey: 'tex_enemy_normal',
-      maxSize: 250,
-    });
-    this.boxes = this.physics.add.group();
-    this.weaponItems = this.physics.add.group({
-      defaultKey: 'tex_weapon_item',
-      maxSize: 30,
-    });
-    this.squadItems = this.physics.add.group({
-      defaultKey: 'tex_squad_item',
-      maxSize: 20,
-    });
+    this.bullets       = this.physics.add.group({ defaultKey: 'tex_bullet',        maxSize: 400 });
+    this.enemies       = this.physics.add.group({ defaultKey: 'tex_enemy_normal',  maxSize: 250 });
+    this.weaponBoxes   = this.physics.add.group({ defaultKey: 'tex_weapon_box',    maxSize: 10  });
+    this.weaponPickups = this.physics.add.group({ defaultKey: 'tex_weapon_pickup', maxSize: 10  });
+    this.squadItems    = this.physics.add.group({ defaultKey: 'tex_squad_item',    maxSize: 20  });
 
-    this.physics.add.overlap(this.bullets, this.enemies, this.onBulletHitEnemy, null, this);
-    this.physics.add.overlap(this.bullets, this.boxes, this.onBulletHitBox, null, this);
-    this.physics.add.overlap(this.squadGroup, this.enemies, this.onSquadHitEnemy, null, this);
-    this.physics.add.overlap(this.squadGroup, this.weaponItems, this.onSquadHitWeaponItem, null, this);
-    this.physics.add.overlap(this.squadGroup, this.squadItems, this.onSquadHitSquadItem, null, this);
+    this.physics.add.overlap(this.bullets,    this.enemies,       this.onBulletHitEnemy,      null, this);
+    this.physics.add.overlap(this.bullets,    this.weaponBoxes,   this.onBulletHitWeaponBox,  null, this);
+    this.physics.add.overlap(this.squadGroup, this.enemies,       this.onSquadHitEnemy,        null, this);
+    this.physics.add.overlap(this.squadGroup, this.weaponBoxes,   this.onSquadHitWeaponBox,   null, this);
+    this.physics.add.overlap(this.squadGroup, this.weaponPickups, this.onSquadHitWeaponPickup, null, this);
+    this.physics.add.overlap(this.squadGroup, this.squadItems,    this.onSquadHitSquadItem,    null, this);
 
     this.input.on('pointerdown', this.onPointer, this);
+    this.input.on('pointerup',   this.onPointer, this);
     this.input.on('pointermove', this.onPointer, this);
 
+    // HUD
     this.scoreText = this.add.text(20, 18, 'SCORE 0', {
       fontFamily: 'monospace', fontSize: '24px', color: '#ffffff',
     });
     this.hiScoreText = this.add.text(WORLD_W - 20, 18, `BEST ${this.hiScore}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#ffe066',
     }).setOrigin(1, 0);
-    this.weaponText = this.add.text(WORLD_W / 2, 18, this.weapon.name, {
-      fontFamily: 'monospace', fontSize: '20px',
+    this.squadText = this.add.text(WORLD_W / 2, 18, `부대원 ${this.squad.length}`, {
+      fontFamily: 'monospace', fontSize: '20px', color: '#3ad27a', fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+    this.weaponText = this.add.text(WORLD_W / 2, 44, this.weapon.name, {
+      fontFamily: 'monospace', fontSize: '14px',
       color: rgbHex(this.weapon.color), fontStyle: 'bold',
     }).setOrigin(0.5, 0);
-    this.squadText = this.add.text(WORLD_W / 2, 44, `부대원 ${this.squad.length}`, {
-      fontFamily: 'monospace', fontSize: '14px', color: '#3ad27a',
-    }).setOrigin(0.5, 0);
-    this.bossText = this.add.text(WORLD_W / 2, 68, '', {
+    this.bossText = this.add.text(WORLD_W / 2, 62, '', {
       fontFamily: 'monospace', fontSize: '14px', color: '#ff9933', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
 
     this.add.rectangle(WORLD_W / 2, (PLAYER_Y + WORLD_H) / 2 + 20, WORLD_W, WORLD_H - PLAYER_Y - 60, 0xffffff, 0.02);
-    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60, '드래그로 이동 · 좌측 상자 = 무기 · 우측 = 부대원 +1', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#ffffff80',
-    }).setOrigin(0.5);
+    this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60,
+      '드래그로 이동 · 초록 원 = 부대원 · 빨간 원 = 위험!', {
+        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff80',
+      }).setOrigin(0.5);
     this.add.text(WORLD_W / 2, WORLD_H - 30, '· 터치 영역 ·', {
       fontFamily: 'monospace', fontSize: '11px', color: '#ffffff40',
     }).setOrigin(0.5);
 
-    BOX_SLOT_TYPES.forEach((typeKey, slotIdx) => {
-      this.spawnBox(slotIdx, getBoxType(typeKey));
-    });
-
+    // 타이머
     this.startShootTimer();
 
     this.spawnEvent = this.time.addEvent({
-      delay: ENEMY_SPAWN_INTERVAL,
-      loop: true,
-      callback: this.spawnEnemy,
-      callbackScope: this,
+      delay: ENEMY_SPAWN_INTERVAL, loop: true,
+      callback: this.spawnEnemy, callbackScope: this,
+    });
+    this.weaponBoxEvent = this.time.addEvent({
+      delay: WEAPON_BOX_SPAWN_MS, loop: true,
+      callback: this.spawnWeaponBox, callbackScope: this,
+    });
+    this.stageEvent = this.time.addEvent({
+      delay: STAGE_ADVANCE_MS, loop: true,
+      callback: () => { this.gameStage++; }, callbackScope: this,
     });
 
-    this.squadItemEvent = this.time.addEvent({
-      delay: SQUAD_ITEM_SPAWN_MS,
-      loop: true,
-      callback: this.spawnSquadItem,
-      callbackScope: this,
-    });
-
+    this.scheduleNextSquadItem();
     this.time.delayedCall(BOSS_INITIAL_DELAY_MS, () => this.spawnNextBoss());
   }
+
+  // ─── 부대원 아이템 ────────────────────────────────────────
+
+  scheduleNextSquadItem() {
+    if (this.gameOver) return;
+    const delay = Phaser.Math.Between(SQUAD_ITEM_SPAWN_MIN_MS, SQUAD_ITEM_SPAWN_MAX_MS);
+    this.squadItemTimer = this.time.delayedCall(delay, () => this.spawnSquadItem());
+  }
+
+  spawnSquadItem() {
+    if (this.gameOver) return;
+    const active = this.squadItems.getChildren().filter((i) => i.active).length;
+    if (active < 5) {
+      const def    = pickSquadItemType();
+      const spawnX = Phaser.Math.Between(0, 1) === 0 ? SQUAD_ITEM_LEFT_X : SQUAD_ITEM_RIGHT_X;
+      const item   = this.squadItems.get(spawnX, -20, 'tex_squad_item');
+      if (item) {
+        item.enableBody(true, spawnX, -20, true, true);
+        item.setTint(def.color);
+        item.body.setVelocity(0, SQUAD_ITEM_FALL_SPEED);
+        item.setData('type',  def.type);
+        item.setData('value', def.value);
+        if (!item.label) {
+          item.label = this.add.text(spawnX, -20, def.label, {
+            fontFamily: 'monospace', fontSize: '14px',
+            color: rgbHex(def.color), fontStyle: 'bold',
+          }).setOrigin(0.5);
+        } else {
+          item.label.setVisible(true).setPosition(spawnX, -20)
+            .setText(def.label).setColor(rgbHex(def.color));
+        }
+      }
+    }
+    this.scheduleNextSquadItem();
+  }
+
+  // ─── 보스 ────────────────────────────────────────────────
 
   spawnNextBoss() {
     if (this.gameOver) return;
     if (this.activeBoss) return;
+
     const nextStage = this.currentBossStage + 1;
     if (nextStage > BOSS_STAGES.length) {
-      this.bossText.setText('보스 클리어!');
+      // 라운드 전환
+      this.bossRound++;
+      this.currentBossStage = 0;
+      this.bossText.setText(`라운드 ${this.bossRound + 1} 시작!`);
+      this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       return;
     }
+
     this.currentBossStage = nextStage;
     const def = BOSS_STAGES[nextStage - 1];
-    const x = WORLD_W / 2;
+    const x   = WORLD_W / 2;
     const boss = this.enemies.get(x, -def.radius, def.tex);
     if (!boss) return;
+
     boss.setTexture(def.tex);
     boss.enableBody(true, x, -def.radius, true, true);
     boss.body.setSize(def.radius * 2, def.radius * 2, true);
     boss.body.setVelocity(0, def.speed);
-    boss.setData('hp', def.hp);
-    boss.setData('maxHp', def.hp);
-    boss.setData('score', def.score);
-    boss.setData('typeKey', 'boss');
+
+    const hpMult  = 1 + this.bossRound * 0.5;
+    const actualHp = Math.round(def.hp * hpMult);
+    boss.setData('hp',       actualHp);
+    boss.setData('maxHp',    actualHp);
+    boss.setData('score',    Math.round(def.score * hpMult));
+    boss.setData('typeKey',  'boss');
     boss.setData('bossStage', def.stage);
 
     if (boss.hpBarBg) { boss.hpBarBg.destroy(); boss.hpBarBg = null; }
     if (boss.hpBarFg) { boss.hpBarFg.destroy(); boss.hpBarFg = null; }
-    const barW = def.radius * 2;
-    const barBg = this.add.image(boss.x, boss.y - def.radius - 10, 'tex_hpbar_bg').setDisplaySize(barW, 8);
-    const barFg = this.add.image(boss.x - barW / 2, boss.y - def.radius - 10, 'tex_hpbar_fg')
+    const barW  = def.radius * 2;
+    const barBg = this.add.image(x, -def.radius - 10, 'tex_hpbar_bg').setDisplaySize(barW, 8);
+    const barFg = this.add.image(x - barW / 2, -def.radius - 10, 'tex_hpbar_fg')
       .setDisplaySize(barW, 8).setOrigin(0, 0.5);
     boss.hpBarBg = barBg;
     boss.hpBarFg = barFg;
-    boss.hpBarW = barW;
+    boss.hpBarW  = barW;
 
     this.activeBoss = boss;
-    this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length} (HP ${def.hp})`);
+    const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
+    this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${actualHp})`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
   }
+
+  // ─── 부대원 관리 ─────────────────────────────────────────
 
   addSquadMember(count = 1) {
     for (let i = 0; i < count; i++) {
@@ -319,6 +376,13 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  removeSquadMember(member) {
+    const idx = this.squad.indexOf(member);
+    if (idx < 0) return;
+    this.squad.splice(idx, 1);
+    member.destroy();
+  }
+
   loseSquadMember(member) {
     const idx = this.squad.indexOf(member);
     if (idx < 0) return;
@@ -329,38 +393,18 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: this.squadText, scale: { from: 1.4, to: 1 }, duration: 200 });
     this.invulnUntil = this.time.now + SQUAD_SPAWN_INVULN_MS;
     this.squad.forEach((m) => m.setAlpha(0.5));
-    this.time.delayedCall(SQUAD_SPAWN_INVULN_MS, () => {
-      this.squad.forEach((m) => m.setAlpha(1));
-    });
+    this.time.delayedCall(SQUAD_SPAWN_INVULN_MS, () => this.squad.forEach((m) => m.setAlpha(1)));
     if (this.squad.length === 0) this.endGame();
   }
+
+  // ─── 사격 ────────────────────────────────────────────────
 
   startShootTimer() {
     if (this.shootEvent) this.shootEvent.remove();
     this.shootEvent = this.time.addEvent({
-      delay: this.weapon.interval,
-      loop: true,
-      callback: this.shoot,
-      callbackScope: this,
+      delay: this.weapon.interval, loop: true,
+      callback: this.shoot, callbackScope: this,
     });
-  }
-
-  onPointer(pointer) {
-    if (!pointer.isDown) return;
-    if (this.gameOver) {
-      if (this.restartBounds) {
-        const r = this.restartBounds;
-        if (pointer.x >= r.x && pointer.x <= r.x + r.w &&
-            pointer.y >= r.y && pointer.y <= r.y + r.h) {
-          this.scene.restart();
-        }
-      }
-      return;
-    }
-    this.targetX = Phaser.Math.Clamp(pointer.x, PLAYABLE_LEFT, PLAYABLE_RIGHT);
-    if (this.hintText.alpha > 0) {
-      this.tweens.add({ targets: this.hintText, alpha: 0, duration: 400 });
-    }
   }
 
   shoot() {
@@ -369,29 +413,26 @@ export default class GameScene extends Phaser.Scene {
     for (const member of this.squad) {
       if (!member.active) continue;
       for (let i = 0; i < w.count; i++) {
-        const t = w.count > 1 ? (i / (w.count - 1)) - 0.5 : 0;
-        const angleDeg = -90 + t * w.spread;
-        const rad = Phaser.Math.DegToRad(angleDeg);
-        const vx = Math.cos(rad) * w.speed;
-        const vy = Math.sin(rad) * w.speed;
+        const t      = w.count > 1 ? (i / (w.count - 1)) - 0.5 : 0;
+        const rad    = Phaser.Math.DegToRad(-90 + t * w.spread);
         const bullet = this.bullets.get(member.x, member.y - 18, 'tex_bullet');
         if (!bullet) continue;
         bullet.enableBody(true, member.x, member.y - 18, true, true);
         bullet.setTexture('tex_bullet');
         bullet.setTint(w.color);
-        bullet.body.setVelocity(vx, vy);
+        bullet.body.setVelocity(Math.cos(rad) * w.speed, Math.sin(rad) * w.speed);
         bullet.setData('damage', w.damage);
       }
     }
   }
 
-  recycleBullet(b) {
-    b.disableBody(true, true);
-  }
+  recycleBullet(b) { b.disableBody(true, true); }
+
+  // ─── 적 스폰 ─────────────────────────────────────────────
 
   spawnEnemy() {
     if (this.gameOver) return;
-    const x = Phaser.Math.Between(COMBAT_LEFT + 20, COMBAT_RIGHT - 20);
+    const x    = Phaser.Math.Between(COMBAT_LEFT + 20, COMBAT_RIGHT - 20);
     const type = pickEnemyType();
     const enemy = this.enemies.get(x, -type.radius, type.tex);
     if (!enemy) return;
@@ -399,92 +440,97 @@ export default class GameScene extends Phaser.Scene {
     enemy.enableBody(true, x, -type.radius, true, true);
     enemy.body.setSize(type.radius * 2, type.radius * 2, true);
     enemy.body.setVelocity(0, type.speed);
-    enemy.setData('hp', type.hp);
-    enemy.setData('maxHp', type.hp);
-    enemy.setData('score', type.score);
+    enemy.setData('hp',      type.hp);
+    enemy.setData('maxHp',   type.hp);
+    enemy.setData('score',   type.score);
     enemy.setData('typeKey', type.key);
     enemy.setData('bossStage', 0);
-
     if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
     if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
   }
 
-  spawnBox(slotIdx, type) {
-    const y = BOX_SLOTS_Y[slotIdx];
-    const box = this.boxes.create(BOX_X, y, `tex_box_${type.key}`);
-    box.body.setImmovable(true);
-    box.body.setVelocity(0, 0);
-    box.setData('hp', type.hp);
-    box.setData('maxHp', type.hp);
-    box.setData('typeKey', type.key);
-    box.setData('weaponKey', type.weaponKey);
-    box.setData('slotIdx', slotIdx);
+  // ─── 무기 상자 ───────────────────────────────────────────
 
-    const barW = BOX_W * 0.85;
-    const barBg = this.add.image(box.x, box.y - BOX_H / 2 - 8, 'tex_hpbar_bg').setDisplaySize(barW, 5);
-    const barFg = this.add.image(box.x - barW / 2, box.y - BOX_H / 2 - 8, 'tex_hpbar_fg')
-      .setDisplaySize(barW, 5).setOrigin(0, 0.5);
+  spawnWeaponBox() {
+    if (this.gameOver) return;
+    const spawnX = WEAPON_BOX_SPAWN_XS[Phaser.Math.Between(0, WEAPON_BOX_SPAWN_XS.length - 1)];
+    const startY = -WEAPON_BOX_RADIUS * 2;
+    const box    = this.weaponBoxes.get(spawnX, startY, 'tex_weapon_box');
+    if (!box) return;
+
+    box.enableBody(true, spawnX, startY, true, true);
+    box.body.setSize(WEAPON_BOX_RADIUS * 2, WEAPON_BOX_RADIUS * 2, true);
+    box.body.setVelocity(0, WEAPON_BOX_FALL_SPEED);
+
+    const minHp = WEAPON_BOX_BASE_HP + this.gameStage * WEAPON_BOX_HP_SCALE;
+    const maxHp = minHp + 4 + Math.floor(this.gameStage * 2);
+    const hp    = Phaser.Math.Between(minHp, maxHp);
+    box.setData('hp',    hp);
+    box.setData('maxHp', hp);
+
+    const droppedWeapon = WEAPONS[Phaser.Math.Between(0, WEAPONS.length - 1)];
+    box.setData('weaponKey', droppedWeapon.key);
+
+    if (box.hpBarBg) { box.hpBarBg.destroy(); box.hpBarBg = null; }
+    if (box.hpBarFg) { box.hpBarFg.destroy(); box.hpBarFg = null; }
+    const barW  = WEAPON_BOX_RADIUS * 2;
+    const barBg = this.add.image(spawnX, startY - WEAPON_BOX_RADIUS - 8, 'tex_hpbar_bg').setDisplaySize(barW, 6);
+    const barFg = this.add.image(spawnX - barW / 2, startY - WEAPON_BOX_RADIUS - 8, 'tex_hpbar_fg')
+      .setDisplaySize(barW, 6).setOrigin(0, 0.5);
     box.hpBarBg = barBg;
     box.hpBarFg = barFg;
-    box.hpBarW = barW;
+    box.hpBarW  = barW;
 
-    const w = getWeapon(type.weaponKey);
-    const label = this.add.text(box.x, box.y, w.name, {
-      fontFamily: 'monospace', fontSize: '11px',
-      color: rgbHex(w.color), fontStyle: 'bold',
-    }).setOrigin(0.5);
-    box.label = label;
-  }
-
-  scheduleBoxRespawn(slotIdx, typeKey) {
-    this.time.delayedCall(BOX_RESPAWN_MS, () => {
-      if (this.gameOver) return;
-      this.spawnBox(slotIdx, getBoxType(typeKey));
-    });
-  }
-
-  spawnSquadItem() {
-    if (this.gameOver) return;
-    const active = this.squadItems.getChildren().filter((i) => i.active).length;
-    if (active >= 5) return;
-    const value = SQUAD_ITEM_VALUES[Phaser.Math.Between(0, SQUAD_ITEM_VALUES.length - 1)];
-    const item = this.squadItems.get(SQUAD_ITEM_X, -20, 'tex_squad_item');
-    if (!item) return;
-    item.enableBody(true, SQUAD_ITEM_X, -20, true, true);
-    item.body.setVelocity(0, SQUAD_ITEM_FALL_SPEED);
-    item.setData('value', value);
-    const labelText = `+${value}`;
-    if (!item.label) {
-      item.label = this.add.text(item.x, item.y, labelText, {
-        fontFamily: 'monospace', fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
+    if (!box.label) {
+      box.label = this.add.text(spawnX, startY, droppedWeapon.name, {
+        fontFamily: 'monospace', fontSize: '11px',
+        color: rgbHex(droppedWeapon.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
-      item.label.setVisible(true).setText(labelText);
+      box.label.setVisible(true).setPosition(spawnX, startY)
+        .setText(droppedWeapon.name).setColor(rgbHex(droppedWeapon.color));
     }
   }
 
-  spawnWeaponItem(x, y, weaponKey) {
-    const w = getWeapon(weaponKey);
-    const item = this.weaponItems.get(x, y, 'tex_weapon_item');
+  killWeaponBox(box, spawnPickup = false) {
+    if (spawnPickup) {
+      const weaponKey = box.getData('weaponKey');
+      if (weaponKey) this.spawnWeaponPickup(box.x, box.y, weaponKey);
+    }
+    if (box.hpBarBg) { box.hpBarBg.destroy(); box.hpBarBg = null; }
+    if (box.hpBarFg) { box.hpBarFg.destroy(); box.hpBarFg = null; }
+    if (box.label)   box.label.setVisible(false);
+    box.disableBody(true, true);
+  }
+
+  spawnWeaponPickup(x, y, weaponKey) {
+    const w    = getWeapon(weaponKey);
+    const item = this.weaponPickups.get(x, y, 'tex_weapon_pickup');
     if (!item) return;
     item.enableBody(true, x, y, true, true);
     item.setTint(w.color);
-    item.body.setVelocity(0, WEAPON_ITEM_FALL_SPEED);
+    item.body.setVelocity(0, WEAPON_PICKUP_FALL_SPEED);
     item.setData('weaponKey', weaponKey);
     if (!item.label) {
       item.label = this.add.text(x, y, w.name, {
-        fontFamily: 'monospace', fontSize: '11px',
+        fontFamily: 'monospace', fontSize: '13px',
         color: rgbHex(w.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
-      item.label.setVisible(true).setText(w.name).setColor(rgbHex(w.color));
+      item.label.setVisible(true).setPosition(x, y).setText(w.name).setColor(rgbHex(w.color));
     }
   }
 
-  recycleItem(item) {
-    if (item.label) item.label.setVisible(false);
-    item.disableBody(true, true);
+  equipWeapon(weaponKey) {
+    const next = getWeapon(weaponKey);
+    this.weapon = next;
+    this.weaponText.setText(next.name);
+    this.weaponText.setColor(rgbHex(next.color));
+    this.tweens.add({ targets: this.weaponText, scale: { from: 1.6, to: 1 }, duration: 250 });
+    this.startShootTimer();
   }
+
+  // ─── 충돌 핸들러 ─────────────────────────────────────────
 
   onBulletHitEnemy(bullet, enemy) {
     if (!bullet.active || !enemy.active) return;
@@ -492,7 +538,7 @@ export default class GameScene extends Phaser.Scene {
     this.recycleBullet(bullet);
     const hp = enemy.getData('hp') - damage;
     if (hp <= 0) {
-      const reward = enemy.getData('score') ?? 1;
+      const reward  = enemy.getData('score') ?? 1;
       const wasBoss = enemy === this.activeBoss;
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.killEnemy(enemy);
@@ -504,41 +550,98 @@ export default class GameScene extends Phaser.Scene {
       }
       if (wasBoss) {
         this.activeBoss = null;
-        const more = this.currentBossStage < BOSS_STAGES.length;
-        if (more) {
-          this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
-          this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
-        } else {
-          this.bossText.setText('보스 클리어!');
-        }
+        this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
+        this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       }
     } else {
       enemy.setData('hp', hp);
       this.refreshHpBar(enemy);
       if (enemy === this.activeBoss) {
-        const def = BOSS_STAGES[this.currentBossStage - 1];
-        this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length} (HP ${hp}/${def.hp})`);
+        const maxHp  = enemy.getData('maxHp');
+        const def    = BOSS_STAGES[this.currentBossStage - 1];
+        const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
+        this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${hp}/${maxHp})`);
       }
     }
   }
 
-  onBulletHitBox(bullet, box) {
+  onBulletHitWeaponBox(bullet, box) {
     if (!bullet.active || !box.active) return;
     const damage = bullet.getData('damage') ?? 1;
     this.recycleBullet(bullet);
     const hp = box.getData('hp') - damage;
     if (hp <= 0) {
-      const slotIdx = box.getData('slotIdx');
-      const typeKey = box.getData('typeKey');
-      const weaponKey = box.getData('weaponKey');
-      this.spawnWeaponItem(box.x, box.y, weaponKey);
-      this.killBox(box);
-      this.scheduleBoxRespawn(slotIdx, typeKey);
+      this.killWeaponBox(box, true);
     } else {
       box.setData('hp', hp);
       this.refreshHpBar(box);
     }
   }
+
+  onSquadHitEnemy(member, enemy) {
+    if (this.gameOver) return;
+    if (!member.active || !enemy.active) return;
+    if (this.time.now < this.invulnUntil) return;
+    if (enemy !== this.activeBoss) this.killEnemy(enemy);
+    this.loseSquadMember(member);
+  }
+
+  onSquadHitWeaponBox(member, box) {
+    if (!box.active || this.gameOver) return;
+    const bx = box.x, by = box.y;
+    const r2 = WEAPON_BOX_KILL_RADIUS * WEAPON_BOX_KILL_RADIUS;
+    const toKill = this.squad.filter((m) => {
+      if (!m.active) return false;
+      const dx = m.x - bx, dy = m.y - by;
+      return dx * dx + dy * dy <= r2;
+    });
+    this.killWeaponBox(box, false);
+    if (toKill.length === 0) return;
+    toKill.forEach((m) => this.removeSquadMember(m));
+    this.layoutSquad();
+    this.squadText.setText(`부대원 ${this.squad.length}`);
+    this.tweens.add({ targets: this.squadText, scale: { from: 1.4, to: 1 }, duration: 200 });
+    this.invulnUntil = this.time.now + SQUAD_SPAWN_INVULN_MS;
+    this.squad.forEach((m) => m.setAlpha(0.5));
+    this.time.delayedCall(SQUAD_SPAWN_INVULN_MS, () => this.squad.forEach((m) => m.setAlpha(1)));
+    if (this.squad.length === 0) this.endGame();
+  }
+
+  onSquadHitWeaponPickup(_member, item) {
+    if (!item.active) return;
+    const weaponKey = item.getData('weaponKey');
+    if (item.label) item.label.setVisible(false);
+    item.disableBody(true, true);
+    this.equipWeapon(weaponKey);
+  }
+
+  onSquadHitSquadItem(_member, item) {
+    if (!item.active) return;
+    const type = item.getData('type');
+    if (item.label) item.label.setVisible(false);
+    item.disableBody(true, true);
+
+    let value = type === 'question'
+      ? Phaser.Math.Between(-1, 2)
+      : item.getData('value');
+
+    if (value > 0) {
+      this.addSquadMember(value);
+      this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
+    } else if (value < 0 && this.squad.length > 0) {
+      const victim = this.squad[Phaser.Math.Between(0, this.squad.length - 1)];
+      this.loseSquadMember(victim);
+    }
+  }
+
+  onBossEscape(boss) {
+    this.activeBoss = null;
+    this.bossText.setText(`보스 탈출! ${BOSS_RESPAWN_DELAY_MS / 1000}초 후 재등장`);
+    this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
+    this.killEnemy(boss);
+  }
+
+  // ─── 유틸리티 ────────────────────────────────────────────
 
   refreshHpBar(target) {
     if (!target.hpBarFg) return;
@@ -568,64 +671,35 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  killBox(box) {
-    if (box.hpBarBg) box.hpBarBg.destroy();
-    if (box.hpBarFg) box.hpBarFg.destroy();
-    if (box.label) box.label.destroy();
-    box.destroy();
-  }
-
-  onSquadHitEnemy(member, enemy) {
+  onPointer(pointer) {
     if (this.gameOver) return;
-    if (!member.active || !enemy.active) return;
-    if (this.time.now < this.invulnUntil) return;
-    const isBoss = enemy === this.activeBoss;
-    if (!isBoss) this.killEnemy(enemy);
-    this.loseSquadMember(member);
+    if (!pointer.isDown) return;
+    this.targetX = Phaser.Math.Clamp(pointer.x, PLAYABLE_LEFT, PLAYABLE_RIGHT);
+    if (this.hintText.alpha > 0)
+      this.tweens.add({ targets: this.hintText, alpha: 0, duration: 400 });
   }
 
-  onBossEscape(boss) {
-    this.activeBoss = null;
-    if (this.currentBossStage < BOSS_STAGES.length) {
-      this.bossText.setText(`보스 탈출! 다음 ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
-      this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
-    } else {
-      this.bossText.setText('보스 클리어!');
-    }
-    this.killEnemy(boss);
-  }
-
-  onSquadHitWeaponItem(_member, item) {
-    if (!item.active) return;
-    const weaponKey = item.getData('weaponKey');
-    this.equipWeapon(weaponKey);
-    this.recycleItem(item);
-  }
-
-  equipWeapon(weaponKey) {
-    const next = getWeapon(weaponKey);
-    if (next.key === this.weapon.key) return;
-    this.weapon = next;
-    this.weaponText.setText(this.weapon.name);
-    this.weaponText.setColor(rgbHex(this.weapon.color));
-    this.tweens.add({ targets: this.weaponText, scale: { from: 1.6, to: 1 }, duration: 250 });
-    this.startShootTimer();
-  }
-
-  onSquadHitSquadItem(_member, item) {
-    if (!item.active) return;
-    const value = item.getData('value') ?? 1;
-    this.recycleItem(item);
-    this.addSquadMember(value);
-    this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
-  }
+  // ─── 게임 오버 ───────────────────────────────────────────
 
   endGame() {
     this.gameOver = true;
-    if (this.shootEvent) this.shootEvent.remove();
-    if (this.spawnEvent) this.spawnEvent.remove();
-    if (this.squadItemEvent) this.squadItemEvent.remove();
+    if (this.shootEvent)      this.shootEvent.remove();
+    if (this.spawnEvent)      this.spawnEvent.remove();
+    if (this.weaponBoxEvent)  this.weaponBoxEvent.remove();
+    if (this.stageEvent)      this.stageEvent.remove();
+    if (this.squadItemTimer)  this.squadItemTimer.remove();
     this.physics.pause();
+
+    // 네이티브 DOM 이벤트로 재시작 — Phaser 입력 시스템 우회
+    window.setTimeout(() => {
+      const handler = () => {
+        document.removeEventListener('pointerdown', handler);
+        document.removeEventListener('touchstart',  handler);
+        this.scene.restart();
+      };
+      document.addEventListener('pointerdown', handler, { once: true });
+      document.addEventListener('touchstart',  handler, { once: true });
+    }, 600);
 
     saveHiScore(this.hiScore);
     const newRecord = this.score > 0 && this.score === this.hiScore;
@@ -647,77 +721,73 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const btnY = WORLD_H / 2 + 140;
-    const btnW = 320;
-    const btnH = 96;
-    const btnBg = this.add.rectangle(WORLD_W / 2, btnY, btnW, btnH, 0x4cc2ff, 0.35)
+    const btnBg = this.add.rectangle(WORLD_W / 2, btnY, 320, 96, 0x4cc2ff, 0.35)
       .setStrokeStyle(5, 0xffffff, 1);
     this.add.text(WORLD_W / 2, btnY, '▶ 다시하기', {
       fontFamily: 'sans-serif', fontSize: '40px', color: '#ffffff', fontStyle: 'bold',
     }).setOrigin(0.5);
-
     this.tweens.add({
-      targets: btnBg,
-      alpha: { from: 1, to: 0.55 },
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
+      targets: btnBg, alpha: { from: 1, to: 0.55 },
+      duration: 700, yoyo: true, repeat: -1,
     });
-
-    this.restartBounds = {
-      x: WORLD_W / 2 - btnW / 2,
-      y: btnY - btnH / 2,
-      w: btnW,
-      h: btnH,
-    };
   }
+
+  // ─── 매 프레임 ───────────────────────────────────────────
 
   update(_, deltaMs) {
     if (this.gameOver) return;
-    const dt = deltaMs / 1000;
+    const dt      = deltaMs / 1000;
     const maxStep = PLAYER_SPEED * dt;
 
     this.squad.forEach((m) => {
       if (!m.active) return;
       const wantX = this.targetX + (m.getData('offsetX') ?? 0);
-      const wantY = PLAYER_Y + (m.getData('offsetY') ?? 0);
-      const dx = wantX - m.x;
-      const dy = wantY - m.y;
-      m.x += Phaser.Math.Clamp(dx, -maxStep, maxStep);
-      m.y += Phaser.Math.Clamp(dy, -maxStep, maxStep);
+      const wantY = PLAYER_Y    + (m.getData('offsetY') ?? 0);
+      m.x += Phaser.Math.Clamp(wantX - m.x, -maxStep, maxStep);
+      m.y += Phaser.Math.Clamp(wantY - m.y, -maxStep, maxStep);
     });
 
     this.bullets.getChildren().forEach((b) => {
       if (!b.active) return;
-      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30) this.recycleBullet(b);
+      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30)
+        this.recycleBullet(b);
     });
+
     this.enemies.getChildren().forEach((e) => {
       if (!e.active) return;
       if (e.hpBarBg) {
-        e.hpBarBg.x = e.x;
-        e.hpBarBg.y = e.y - e.displayHeight / 2 - 8;
-        e.hpBarFg.x = e.x - e.hpBarW / 2;
-        e.hpBarFg.y = e.hpBarBg.y;
+        e.hpBarBg.x  = e.x;
+        e.hpBarBg.y  = e.y - e.displayHeight / 2 - 8;
+        e.hpBarFg.x  = e.x - e.hpBarW / 2;
+        e.hpBarFg.y  = e.hpBarBg.y;
       }
       if (e.y > WORLD_H + 30) {
         if (e === this.activeBoss) this.onBossEscape(e);
         else this.killEnemy(e);
       }
     });
-    this.weaponItems.getChildren().forEach((it) => {
-      if (!it.active) return;
-      if (it.label) {
-        it.label.x = it.x;
-        it.label.y = it.y;
+
+    this.weaponBoxes.getChildren().forEach((b) => {
+      if (!b.active) return;
+      if (b.label)   { b.label.x = b.x; b.label.y = b.y; }
+      if (b.hpBarBg) {
+        b.hpBarBg.x = b.x;
+        b.hpBarBg.y = b.y - WEAPON_BOX_RADIUS - 8;
+        b.hpBarFg.x = b.x - b.hpBarW / 2;
+        b.hpBarFg.y = b.hpBarBg.y;
       }
-      if (it.y > WORLD_H + 30) this.recycleItem(it);
+      if (b.y > WORLD_H + 30) this.killWeaponBox(b);
     });
-    this.squadItems.getChildren().forEach((it) => {
+
+    const trackItem = (it) => {
       if (!it.active) return;
-      if (it.label) {
-        it.label.x = it.x;
-        it.label.y = it.y;
+      if (it.label) { it.label.x = it.x; it.label.y = it.y; }
+      if (it.y > WORLD_H + 30) {
+        if (it.label) it.label.setVisible(false);
+        it.disableBody(true, true);
       }
-      if (it.y > WORLD_H + 30) this.recycleItem(it);
-    });
+    };
+    this.weaponPickups.getChildren().forEach(trackItem);
+    this.squadItems.getChildren().forEach(trackItem);
   }
 }
