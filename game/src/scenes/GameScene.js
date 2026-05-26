@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import Sfx from '../sfx.js';
 
 const WORLD_W = 540;
 const WORLD_H = 960;
@@ -196,6 +197,7 @@ export default class GameScene extends Phaser.Scene {
     this.activeBoss   = null;
     this.bossRound    = 0;
     this.gameStage    = 0;
+    if (!this.sfx) this.sfx = new Sfx();
 
     // 배경
     this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
@@ -263,6 +265,12 @@ export default class GameScene extends Phaser.Scene {
     this.bossText = this.add.text(WORLD_W / 2, 62, '', {
       fontFamily: 'monospace', fontSize: '14px', color: '#ff9933', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
+
+    // 음소거 토글 (좌하단). onPointer에서 좌표로 판정
+    this.muteIcon = this.add.text(20, WORLD_H - 36, this.sfx.muted ? '소리 OFF' : '소리 ON', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#ffffff90',
+    });
+    this.muteBounds = { x: 10, y: WORLD_H - 48, w: 130, h: 40 };
 
     this.add.rectangle(WORLD_W / 2, (PLAYER_Y + WORLD_H) / 2 + 20, WORLD_W, WORLD_H - PLAYER_Y - 60, 0xffffff, 0.02);
     this.hintText = this.add.text(WORLD_W / 2, WORLD_H - 60,
@@ -376,6 +384,7 @@ export default class GameScene extends Phaser.Scene {
     boss.hpBarW  = barW;
 
     this.activeBoss = boss;
+    this.sfx.bossAppear();
     const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
     this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${actualHp})`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
@@ -399,6 +408,7 @@ export default class GameScene extends Phaser.Scene {
   fireBossPattern() {
     const boss = this.activeBoss;
     if (!boss || !boss.active || this.gameOver) return;
+    this.sfx.bossShoot();
     const p = BOSS_PATTERNS[(this.currentBossStage - 1) % BOSS_PATTERNS.length];
     if (p.radial) {
       for (let i = 0; i < p.count; i++) {
@@ -431,6 +441,7 @@ export default class GameScene extends Phaser.Scene {
     bullet.disableBody(true, true);
     if (this.time.now < this.invulnUntil) return;
     this.loseSquadMember(member);
+    this.sfx.squadLoss();
   }
 
   // ─── 부대원 관리 ─────────────────────────────────────────
@@ -489,6 +500,7 @@ export default class GameScene extends Phaser.Scene {
   shoot() {
     if (this.gameOver) return;
     const w = this.weapon;
+    if (this.squad.length > 0) this.sfx.shoot();
     for (const member of this.squad) {
       if (!member.active) continue;
       for (let i = 0; i < w.count; i++) {
@@ -622,6 +634,7 @@ export default class GameScene extends Phaser.Scene {
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.deathEmitter.explode(wasBoss ? 28 : 8, enemy.x, enemy.y);
       this.cameras.main.shake(wasBoss ? 300 : 60, wasBoss ? 0.02 : 0.004);
+      if (wasBoss) this.sfx.bossDeath(); else this.sfx.enemyDeath();
       this.killEnemy(enemy);
       this.score += reward;
       this.scoreText.setText(`SCORE ${this.score}`);
@@ -641,6 +654,7 @@ export default class GameScene extends Phaser.Scene {
       this.refreshHpBar(enemy);
       this.flashEnemy(enemy);
       if (enemy === this.activeBoss) {
+        this.sfx.bossHit();
         const maxHp  = enemy.getData('maxHp');
         const def    = BOSS_STAGES[this.currentBossStage - 1];
         const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
@@ -685,6 +699,7 @@ export default class GameScene extends Phaser.Scene {
     this.killWeaponBox(box, false);
     if (toKill.length === 0) return;
     toKill.forEach((m) => this.removeSquadMember(m));
+    this.sfx.squadLoss();
     this.layoutSquad();
     this.squadText.setText(`부대원 ${this.squad.length}`);
     this.tweens.add({ targets: this.squadText, scale: { from: 1.4, to: 1 }, duration: 200 });
@@ -700,6 +715,7 @@ export default class GameScene extends Phaser.Scene {
     if (item.label) item.label.setVisible(false);
     item.disableBody(true, true);
     this.equipWeapon(weaponKey);
+    this.sfx.pickup();
   }
 
   onSquadHitSquadItem(_member, item) {
@@ -714,6 +730,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (value > 0) {
       this.addSquadMember(value);
+      this.sfx.squadGain();
       this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
     } else if (value < 0 && this.squad.length > 0) {
       const victim = this.squad[Phaser.Math.Between(0, this.squad.length - 1)];
@@ -776,6 +793,14 @@ export default class GameScene extends Phaser.Scene {
   onPointer(pointer) {
     if (this.gameOver) return;
     if (!pointer.isDown) return;
+    this.sfx.resume();
+    const b = this.muteBounds;
+    if (b && pointer.x >= b.x && pointer.x <= b.x + b.w &&
+        pointer.y >= b.y && pointer.y <= b.y + b.h) {
+      const muted = this.sfx.toggle();
+      this.muteIcon.setText(muted ? '소리 OFF' : '소리 ON');
+      return;
+    }
     this.targetX = Phaser.Math.Clamp(pointer.x, PLAYABLE_LEFT, PLAYABLE_RIGHT);
     if (this.hintText.alpha > 0)
       this.tweens.add({ targets: this.hintText, alpha: 0, duration: 400 });
@@ -791,6 +816,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.stageEvent)      this.stageEvent.remove();
     if (this.squadItemTimer)  this.squadItemTimer.remove();
     this.stopBossFire();
+    this.sfx.gameOver();
     this.physics.pause();
 
     // 네이티브 DOM 이벤트로 재시작 — Phaser 입력 시스템 우회
