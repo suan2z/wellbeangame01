@@ -143,6 +143,7 @@ export default class GameScene extends Phaser.Scene {
     this.makeCircleTexture('tex_squad_item',    18,                  0xffffff);
     this.makeCircleTexture('tex_weapon_box',    WEAPON_BOX_RADIUS,   0xff2200);
     this.makeCircleTexture('tex_weapon_pickup', WEAPON_PICKUP_RADIUS, 0xffffff);
+    this.makeCircleTexture('tex_particle', 4, 0xffffff);
     this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
     this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
   }
@@ -209,6 +210,15 @@ export default class GameScene extends Phaser.Scene {
     this.weaponBoxes   = this.physics.add.group({ defaultKey: 'tex_weapon_box',    maxSize: 10  });
     this.weaponPickups = this.physics.add.group({ defaultKey: 'tex_weapon_pickup', maxSize: 10  });
     this.squadItems    = this.physics.add.group({ defaultKey: 'tex_squad_item',    maxSize: 20  });
+
+    this.deathEmitter = this.add.particles(0, 0, 'tex_particle', {
+      speed: { min: 60, max: 200 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 },
+      lifespan: 350,
+      emitting: false,
+    });
+    this.deathEmitter.setDepth(5);
 
     this.physics.add.overlap(this.bullets,    this.enemies,       this.onBulletHitEnemy,      null, this);
     this.physics.add.overlap(this.bullets,    this.weaponBoxes,   this.onBulletHitWeaponBox,  null, this);
@@ -541,6 +551,8 @@ export default class GameScene extends Phaser.Scene {
       const reward  = enemy.getData('score') ?? 1;
       const wasBoss = enemy === this.activeBoss;
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
+      this.deathEmitter.explode(wasBoss ? 28 : 8, enemy.x, enemy.y);
+      this.cameras.main.shake(wasBoss ? 300 : 60, wasBoss ? 0.02 : 0.004);
       this.killEnemy(enemy);
       this.score += reward;
       this.scoreText.setText(`SCORE ${this.score}`);
@@ -556,6 +568,7 @@ export default class GameScene extends Phaser.Scene {
     } else {
       enemy.setData('hp', hp);
       this.refreshHpBar(enemy);
+      this.flashEnemy(enemy);
       if (enemy === this.activeBoss) {
         const maxHp  = enemy.getData('maxHp');
         const def    = BOSS_STAGES[this.currentBossStage - 1];
@@ -571,10 +584,13 @@ export default class GameScene extends Phaser.Scene {
     this.recycleBullet(bullet);
     const hp = box.getData('hp') - damage;
     if (hp <= 0) {
+      this.deathEmitter.explode(14, box.x, box.y);
+      this.cameras.main.shake(80, 0.006);
       this.killWeaponBox(box, true);
     } else {
       box.setData('hp', hp);
       this.refreshHpBar(box);
+      this.flashEnemy(box);
     }
   }
 
@@ -653,6 +669,13 @@ export default class GameScene extends Phaser.Scene {
     if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
     if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
     enemy.disableBody(true, true);
+  }
+
+  flashEnemy(obj) {
+    obj.setTintFill(0xffffff);
+    this.time.delayedCall(50, () => {
+      if (obj.active) obj.clearTint();
+    });
   }
 
   showScorePopup(x, y, points, big = false) {
