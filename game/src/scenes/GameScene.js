@@ -31,6 +31,18 @@ const BOSS_STAGES = [
 const BOSS_INITIAL_DELAY_MS = 10000;
 const BOSS_RESPAWN_DELAY_MS = 5000;
 
+// 보스는 이 Y까지 내려와 멈춘 뒤 탄막 발사
+const BOSS_HOLD_Y = 200;
+const BOSS_BULLET_SPEED = 200;
+// 단계별 탄막 패턴 (down = 90도)
+const BOSS_PATTERNS = [
+  { interval: 1800, count: 1, spread: 0,   aimed: true,  radial: false }, // 1: 조준 단발
+  { interval: 1700, count: 3, spread: 44,  aimed: false, radial: false }, // 2: 3-way
+  { interval: 1500, count: 5, spread: 70,  aimed: false, radial: false }, // 3: 5-way
+  { interval: 1300, count: 3, spread: 18,  aimed: true,  radial: false }, // 4: 조준 점사
+  { interval: 1200, count: 10, spread: 0,  aimed: false, radial: true  }, // 5: 전방위
+];
+
 function pickEnemyType() {
   const total = ENEMY_TYPES.reduce((s, t) => s + t.weight, 0);
   let r = Phaser.Math.Between(0, total - 1);
@@ -144,6 +156,7 @@ export default class GameScene extends Phaser.Scene {
     this.makeCircleTexture('tex_weapon_box',    WEAPON_BOX_RADIUS,   0xff2200);
     this.makeCircleTexture('tex_weapon_pickup', WEAPON_PICKUP_RADIUS, 0xffffff);
     this.makeCircleTexture('tex_particle', 4, 0xffffff);
+    this.makeCircleTexture('tex_boss_bullet', 8, 0xff3344);
     this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
     this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
   }
@@ -210,6 +223,7 @@ export default class GameScene extends Phaser.Scene {
     this.weaponBoxes   = this.physics.add.group({ defaultKey: 'tex_weapon_box',    maxSize: 10  });
     this.weaponPickups = this.physics.add.group({ defaultKey: 'tex_weapon_pickup', maxSize: 10  });
     this.squadItems    = this.physics.add.group({ defaultKey: 'tex_squad_item',    maxSize: 20  });
+    this.bossBullets   = this.physics.add.group({ defaultKey: 'tex_boss_bullet',   maxSize: 120 });
 
     this.deathEmitter = this.add.particles(0, 0, 'tex_particle', {
       speed: { min: 60, max: 200 },
@@ -226,6 +240,7 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.squadGroup, this.weaponBoxes,   this.onSquadHitWeaponBox,   null, this);
     this.physics.add.overlap(this.squadGroup, this.weaponPickups, this.onSquadHitWeaponPickup, null, this);
     this.physics.add.overlap(this.squadGroup, this.squadItems,    this.onSquadHitSquadItem,    null, this);
+    this.physics.add.overlap(this.squadGroup, this.bossBullets,   this.onSquadHitBossBullet,   null, this);
 
     this.input.on('pointerdown', this.onPointer, this);
     this.input.on('pointerup',   this.onPointer, this);
@@ -347,6 +362,8 @@ export default class GameScene extends Phaser.Scene {
     boss.setData('score',    Math.round(def.score * hpMult));
     boss.setData('typeKey',  'boss');
     boss.setData('bossStage', def.stage);
+    boss.setData('holding', false);
+    this.stopBossFire();
 
     if (boss.hpBarBg) { boss.hpBarBg.destroy(); boss.hpBarBg = null; }
     if (boss.hpBarFg) { boss.hpBarFg.destroy(); boss.hpBarFg = null; }
@@ -362,6 +379,58 @@ export default class GameScene extends Phaser.Scene {
     const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
     this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${actualHp})`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
+  }
+
+  startBossFire() {
+    this.stopBossFire();
+    const pattern = BOSS_PATTERNS[(this.currentBossStage - 1) % BOSS_PATTERNS.length];
+    this.bossFireEvent = this.time.addEvent({
+      delay: pattern.interval,
+      loop: true,
+      callback: this.fireBossPattern,
+      callbackScope: this,
+    });
+  }
+
+  stopBossFire() {
+    if (this.bossFireEvent) { this.bossFireEvent.remove(); this.bossFireEvent = null; }
+  }
+
+  fireBossPattern() {
+    const boss = this.activeBoss;
+    if (!boss || !boss.active || this.gameOver) return;
+    const p = BOSS_PATTERNS[(this.currentBossStage - 1) % BOSS_PATTERNS.length];
+    if (p.radial) {
+      for (let i = 0; i < p.count; i++) {
+        this.fireBossBullet(boss.x, boss.y, (i / p.count) * 360);
+      }
+      return;
+    }
+    let base = 90;
+    if (p.aimed) {
+      const t = this.squad[0];
+      if (t) base = Phaser.Math.RadToDeg(Math.atan2(t.y - boss.y, t.x - boss.x));
+    }
+    for (let i = 0; i < p.count; i++) {
+      const f = p.count > 1 ? (i / (p.count - 1)) - 0.5 : 0;
+      this.fireBossBullet(boss.x, boss.y, base + f * p.spread);
+    }
+  }
+
+  fireBossBullet(x, y, angleDeg) {
+    const b = this.bossBullets.get(x, y, 'tex_boss_bullet');
+    if (!b) return;
+    b.enableBody(true, x, y, true, true);
+    const rad = Phaser.Math.DegToRad(angleDeg);
+    b.body.setVelocity(Math.cos(rad) * BOSS_BULLET_SPEED, Math.sin(rad) * BOSS_BULLET_SPEED);
+  }
+
+  onSquadHitBossBullet(member, bullet) {
+    if (this.gameOver) return;
+    if (!member.active || !bullet.active) return;
+    bullet.disableBody(true, true);
+    if (this.time.now < this.invulnUntil) return;
+    this.loseSquadMember(member);
   }
 
   // ─── 부대원 관리 ─────────────────────────────────────────
@@ -562,6 +631,8 @@ export default class GameScene extends Phaser.Scene {
       }
       if (wasBoss) {
         this.activeBoss = null;
+        this.stopBossFire();
+        this.clearBossBullets();
         this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
         this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       }
@@ -650,8 +721,16 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  clearBossBullets() {
+    this.bossBullets.getChildren().forEach((b) => {
+      if (b.active) b.disableBody(true, true);
+    });
+  }
+
   onBossEscape(boss) {
     this.activeBoss = null;
+    this.stopBossFire();
+    this.clearBossBullets();
     this.bossText.setText(`보스 탈출! ${BOSS_RESPAWN_DELAY_MS / 1000}초 후 재등장`);
     this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
     this.killEnemy(boss);
@@ -711,6 +790,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.weaponBoxEvent)  this.weaponBoxEvent.remove();
     if (this.stageEvent)      this.stageEvent.remove();
     if (this.squadItemTimer)  this.squadItemTimer.remove();
+    this.stopBossFire();
     this.physics.pause();
 
     // 네이티브 DOM 이벤트로 재시작 — Phaser 입력 시스템 우회
@@ -812,5 +892,19 @@ export default class GameScene extends Phaser.Scene {
     };
     this.weaponPickups.getChildren().forEach(trackItem);
     this.squadItems.getChildren().forEach(trackItem);
+
+    const boss = this.activeBoss;
+    if (boss && boss.active && !boss.getData('holding') && boss.y >= BOSS_HOLD_Y) {
+      boss.y = BOSS_HOLD_Y;
+      boss.body.setVelocity(0, 0);
+      boss.setData('holding', true);
+      this.startBossFire();
+    }
+
+    this.bossBullets.getChildren().forEach((b) => {
+      if (!b.active) return;
+      if (b.y < -30 || b.y > WORLD_H + 30 || b.x < -30 || b.x > WORLD_W + 30)
+        b.disableBody(true, true);
+    });
   }
 }
