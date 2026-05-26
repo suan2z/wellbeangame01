@@ -115,6 +115,16 @@ const STAGE_ADVANCE_MS = 30000;
 const WEAPON_PICKUP_RADIUS    = 16;
 const WEAPON_PICKUP_FALL_SPEED = 70;
 
+// 보스 처치 보상: 3중 1 버프 선택 (그 판 한정 누적)
+const BUFF_POOL = [
+  { key: 'dmg',   name: '데미지 +25%',  desc: '모든 발사체 피해 증가', apply: (s) => { s.damageMult *= 1.25; } },
+  { key: 'fire',  name: '연사 +20%',    desc: '발사 간격 감소',        apply: (s) => { s.fireRateMult *= 0.83; s.startShootTimer(); } },
+  { key: 'squad', name: '부대원 +5',    desc: '즉시 병력 충원',        apply: (s) => { s.addSquadMember(5); s.sfx.squadGain(); } },
+  { key: 'move',  name: '이동 +25%',    desc: '회피 기동력 향상',      apply: (s) => { s.moveMult *= 1.25; } },
+  { key: 'score', name: '점수 +50%',    desc: '획득 점수 증가',        apply: (s) => { s.scoreMult *= 1.5; } },
+  { key: 'shot',  name: '발사체 +1',    desc: '한 번에 더 많이 발사',  apply: (s) => { s.bonusCount += 1; } },
+];
+
 function loadHiScore() {
   try {
     const raw = globalThis.localStorage?.getItem(HISCORE_KEY);
@@ -197,6 +207,12 @@ export default class GameScene extends Phaser.Scene {
     this.activeBoss   = null;
     this.bossRound    = 0;
     this.gameStage    = 0;
+    this.choosing     = false;
+    this.damageMult   = 1;
+    this.fireRateMult = 1;
+    this.moveMult     = 1;
+    this.scoreMult    = 1;
+    this.bonusCount   = 0;
     if (!this.sfx) this.sfx = new Sfx();
 
     // 배경
@@ -492,27 +508,30 @@ export default class GameScene extends Phaser.Scene {
   startShootTimer() {
     if (this.shootEvent) this.shootEvent.remove();
     this.shootEvent = this.time.addEvent({
-      delay: this.weapon.interval, loop: true,
+      delay: Math.max(40, Math.round(this.weapon.interval * this.fireRateMult)), loop: true,
       callback: this.shoot, callbackScope: this,
     });
   }
 
   shoot() {
-    if (this.gameOver) return;
+    if (this.gameOver || this.choosing) return;
     const w = this.weapon;
     if (this.squad.length > 0) this.sfx.shoot();
+    const count = w.count + this.bonusCount;
+    const dmg = w.damage * this.damageMult;
+    const spread = w.spread || (count > 1 ? 24 : 0);
     for (const member of this.squad) {
       if (!member.active) continue;
-      for (let i = 0; i < w.count; i++) {
-        const t      = w.count > 1 ? (i / (w.count - 1)) - 0.5 : 0;
-        const rad    = Phaser.Math.DegToRad(-90 + t * w.spread);
+      for (let i = 0; i < count; i++) {
+        const t      = count > 1 ? (i / (count - 1)) - 0.5 : 0;
+        const rad    = Phaser.Math.DegToRad(-90 + t * spread);
         const bullet = this.bullets.get(member.x, member.y - 18, 'tex_bullet');
         if (!bullet) continue;
         bullet.enableBody(true, member.x, member.y - 18, true, true);
         bullet.setTexture('tex_bullet');
         bullet.setTint(w.color);
         bullet.body.setVelocity(Math.cos(rad) * w.speed, Math.sin(rad) * w.speed);
-        bullet.setData('damage', w.damage);
+        bullet.setData('damage', dmg);
       }
     }
   }
@@ -629,7 +648,8 @@ export default class GameScene extends Phaser.Scene {
     this.recycleBullet(bullet);
     const hp = enemy.getData('hp') - damage;
     if (hp <= 0) {
-      const reward  = enemy.getData('score') ?? 1;
+      const baseReward = enemy.getData('score') ?? 1;
+      const reward  = Math.round(baseReward * this.scoreMult);
       const wasBoss = enemy === this.activeBoss;
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.deathEmitter.explode(wasBoss ? 28 : 8, enemy.x, enemy.y);
@@ -646,8 +666,7 @@ export default class GameScene extends Phaser.Scene {
         this.activeBoss = null;
         this.stopBossFire();
         this.clearBossBullets();
-        this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
-        this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
+        this.showBuffSelection();
       }
     } else {
       enemy.setData('hp', hp);
@@ -744,6 +763,49 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  showBuffSelection() {
+    this.choosing = true;
+    this.physics.pause();
+    this.bossText.setText('강화를 선택하라!');
+
+    const picks = Phaser.Utils.Array.Shuffle([...BUFF_POOL]).slice(0, 3);
+    const overlay = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x000000, 0.72).setDepth(20);
+    const title = this.add.text(WORLD_W / 2, WORLD_H * 0.24, '★ 강화 선택 ★', {
+      fontFamily: 'sans-serif', fontSize: '34px', color: '#ffe066', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(21);
+
+    const cardW = WORLD_W * 0.82, cardH = 96, gap = 22;
+    const startY = WORLD_H * 0.36;
+    this.buffCards = [];
+    picks.forEach((buff, i) => {
+      const cy = startY + i * (cardH + gap);
+      const rect = this.add.rectangle(WORLD_W / 2, cy, cardW, cardH, 0x4cc2ff, 0.28)
+        .setStrokeStyle(4, 0xffffff, 1).setDepth(21);
+      const name = this.add.text(WORLD_W / 2, cy - 16, buff.name, {
+        fontFamily: 'sans-serif', fontSize: '28px', color: '#ffffff', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(22);
+      const desc = this.add.text(WORLD_W / 2, cy + 22, buff.desc, {
+        fontFamily: 'monospace', fontSize: '14px', color: '#ffffffcc',
+      }).setOrigin(0.5).setDepth(22);
+      this.buffCards.push({
+        bounds: { x: WORLD_W / 2 - cardW / 2, y: cy - cardH / 2, w: cardW, h: cardH },
+        buff, objs: [rect, name, desc],
+      });
+    });
+    this.buffUi = [overlay, title];
+  }
+
+  closeBuffSelection() {
+    this.choosing = false;
+    this.physics.resume();
+    if (this.buffUi) this.buffUi.forEach((o) => o.destroy());
+    if (this.buffCards) this.buffCards.forEach((c) => c.objs.forEach((o) => o.destroy()));
+    this.buffUi = null;
+    this.buffCards = null;
+    this.bossText.setText(`다음 보스: ${BOSS_RESPAWN_DELAY_MS / 1000}초 후`);
+    this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
+  }
+
   onBossEscape(boss) {
     this.activeBoss = null;
     this.stopBossFire();
@@ -794,6 +856,21 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     if (!pointer.isDown) return;
     this.sfx.resume();
+    if (this.choosing) {
+      if (this.buffCards) {
+        for (const card of this.buffCards) {
+          const c = card.bounds;
+          if (pointer.x >= c.x && pointer.x <= c.x + c.w &&
+              pointer.y >= c.y && pointer.y <= c.y + c.h) {
+            card.buff.apply(this);
+            this.sfx.pickup();
+            this.closeBuffSelection();
+            return;
+          }
+        }
+      }
+      return;
+    }
     const b = this.muteBounds;
     if (b && pointer.x >= b.x && pointer.x <= b.x + b.w &&
         pointer.y >= b.y && pointer.y <= b.y + b.h) {
@@ -864,9 +941,9 @@ export default class GameScene extends Phaser.Scene {
   // ─── 매 프레임 ───────────────────────────────────────────
 
   update(_, deltaMs) {
-    if (this.gameOver) return;
+    if (this.gameOver || this.choosing) return;
     const dt      = deltaMs / 1000;
-    const maxStep = PLAYER_SPEED * dt;
+    const maxStep = PLAYER_SPEED * this.moveMult * dt;
 
     this.squad.forEach((m) => {
       if (!m.active) return;
