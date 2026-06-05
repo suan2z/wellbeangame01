@@ -64,9 +64,12 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 nav:
-  - 홈: index.md
-  - 기획서: 기획서.md
-  - 콘텐츠:
-      - 적 / 웨이브: 적.md
-      - 무기: 무기.md
-      - 상자 시스템: 상자.md
+  - 게임 개요: index.md
+  - Lane Defense:
+      - 개요: lane-defense/index.md
+      - 게임 기획서: lane-defense/기획서.md
+      - 적 / 웨이브: lane-defense/적.md
+      - 무기: lane-defense/무기.md
+      - 상자 시스템: lane-defense/상자.md
+  - 운석피하기:
+      - 개요: meteor-dodge/index.md
