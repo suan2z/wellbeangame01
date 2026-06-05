@@ -36,10 +36,40 @@ jobs:
       - name: Install MkDocs dependencies
         run: pip install -r requirements.txt
 
-      - name: Inject build timestamp
+      - name: Inject build timestamp & recent commits
         run: |
           BUILD_TIME=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M (KST)')
           find docs -name '*.md' -print0 | xargs -0 sed -i "s/BUILD_TIMESTAMP/${BUILD_TIME}/g"
+
+          python3 - <<'PY'
+          import subprocess
+
+          def gitlog(paths):
+              try:
+                  out = subprocess.check_output(
+                      ['git', 'log', '--pretty=- `%h` %s', '-20', '--', *paths]
+                  ).decode().strip()
+                  return out or '_(아직 변경 이력 없음)_'
+              except Exception as e:
+                  return f'_(git log 실패: {e})_'
+
+          targets = [
+              ('docs/lane-defense/히스토리.md', 'RECENT_COMMITS_LANE',
+               ['game', 'docs/lane-defense']),
+              ('docs/meteor-dodge/히스토리.md', 'RECENT_COMMITS_METEOR',
+               ['docs/meteor-dodge']),
+          ]
+          for path, token, paths in targets:
+              try:
+                  with open(path, 'r', encoding='utf-8') as f:
+                      text = f.read()
+                  text = text.replace(token, gitlog(paths))
+                  with open(path, 'w', encoding='utf-8') as f:
+                      f.write(text)
+                  print(f'injected commits into {path}')
+              except FileNotFoundError:
+                  print(f'skip (not found): {path}')
+          PY
 
       - name: Build MkDocs site
         run: mkdocs build --strict
