@@ -18,7 +18,7 @@ const SQUAD_MAX = 12;
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
-  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 30, score: 1, weight: 100 },
+  { key: 'normal', tex: 'tex_enemy_normal', radius: 22, color: 0xff5577, hp: 1, speed: 18, score: 1, weight: 100 },
 ];
 
 const BOSS_STAGES = [
@@ -472,10 +472,11 @@ export default class GameScene extends Phaser.Scene {
     this.weapon       = getWeapon(STARTING_WEAPON_KEY);
     this.invulnUntil  = 0;
     this.targetX      = WORLD_W / 2;
-    this.currentBossStage = 0;
+    this.stage        = 1;          // 스테이지 1부터 무한대
+    this.bossNum      = 0;          // 현재 스테이지에서 처치/진행한 보스 번호
+    this.bossCount    = 4 + this.stage; // 스테이지당 보스 수 (stage1=5, 이후 +1씩)
     this.activeBoss   = null;
-    this.bossRound    = 0;
-    this.gameStage    = 0;
+    this.gameStage    = 0;          // 무기 상자 난이도용 시간 카운터(별개)
     this.choosing     = false;
     this.damageMult   = 1;
     this.fireRateMult = 1;
@@ -634,18 +635,22 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     if (this.activeBoss) return;
 
-    const nextStage = this.currentBossStage + 1;
-    if (nextStage > BOSS_STAGES.length) {
-      // 라운드 전환
-      this.bossRound++;
-      this.currentBossStage = 0;
-      this.bossText.setText(`라운드 ${this.bossRound + 1} 시작!`);
+    const next = this.bossNum + 1;
+    if (next > this.bossCount) {
+      // ── 스테이지 클리어 → 다음 스테이지 (무기 리셋, 점수 유지) ──
+      this.stage++;
+      this.bossNum   = 0;
+      this.bossCount = 4 + this.stage;
+      this.equipWeapon(STARTING_WEAPON_KEY);
+      this.bossText.setText(`★ 스테이지 ${this.stage} ★ (보스 ${this.bossCount})`);
+      this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
       this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       return;
     }
 
-    this.currentBossStage = nextStage;
-    const def = BOSS_STAGES[nextStage - 1];
+    this.bossNum = next;
+    // 보스 외형은 5종 텍스처를 순환 사용 (보스6 = 보스1 외형, ...)
+    const def = BOSS_STAGES[(next - 1) % BOSS_STAGES.length];
     const x   = WORLD_W / 2;
     const boss = this.enemies.get(x, -def.radius, def.tex);
     if (!boss) return;
@@ -655,7 +660,8 @@ export default class GameScene extends Phaser.Scene {
     boss.body.setSize(def.radius * 2, def.radius * 2, true);
     boss.body.setVelocity(0, def.speed);
 
-    const hpMult  = 1 + this.bossRound * 0.5;
+    // 스테이지가 오를수록 +50%, 스테이지 내에서도 보스마다 +12%씩 강해짐
+    const hpMult  = 1 + (this.stage - 1) * 0.5 + (next - 1) * 0.12;
     const actualHp = Math.round(def.hp * hpMult);
     boss.setData('hp',       actualHp);
     boss.setData('maxHp',    actualHp);
@@ -677,14 +683,13 @@ export default class GameScene extends Phaser.Scene {
 
     this.activeBoss = boss;
     this.sfx.bossAppear();
-    const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
-    this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${actualHp})`);
+    this.bossText.setText(`S${this.stage} · 보스 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
   }
 
   startBossFire() {
     this.stopBossFire();
-    const pattern = BOSS_PATTERNS[(this.currentBossStage - 1) % BOSS_PATTERNS.length];
+    const pattern = BOSS_PATTERNS[(this.bossNum - 1) % BOSS_PATTERNS.length];
     this.bossFireEvent = this.time.addEvent({
       delay: pattern.interval,
       loop: true,
@@ -701,7 +706,7 @@ export default class GameScene extends Phaser.Scene {
     const boss = this.activeBoss;
     if (!boss || !boss.active || this.gameOver) return;
     this.sfx.bossShoot();
-    const p = BOSS_PATTERNS[(this.currentBossStage - 1) % BOSS_PATTERNS.length];
+    const p = BOSS_PATTERNS[(this.bossNum - 1) % BOSS_PATTERNS.length];
     if (p.radial) {
       for (let i = 0; i < p.count; i++) {
         this.fireBossBullet(boss.x, boss.y, (i / p.count) * 360);
@@ -950,10 +955,8 @@ export default class GameScene extends Phaser.Scene {
       this.flashEnemy(enemy);
       if (enemy === this.activeBoss) {
         this.sfx.bossHit();
-        const maxHp  = enemy.getData('maxHp');
-        const def    = BOSS_STAGES[this.currentBossStage - 1];
-        const rLabel = this.bossRound > 0 ? ` R${this.bossRound + 1}` : '';
-        this.bossText.setText(`보스 ${def.stage}/${BOSS_STAGES.length}${rLabel} (HP ${hp}/${maxHp})`);
+        const maxHp = enemy.getData('maxHp');
+        this.bossText.setText(`S${this.stage} · 보스 ${this.bossNum}/${this.bossCount}  HP ${hp}/${maxHp}`);
       }
     }
   }
