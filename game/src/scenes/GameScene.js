@@ -958,6 +958,22 @@ export default class GameScene extends Phaser.Scene {
     enemy.setData('score',   type.score);
     enemy.setData('typeKey', type.key);
     enemy.setData('bossStage', 0);
+
+    // 행동 패턴 (좀비 비틀거림 / 추적 / 직진)
+    const r = Math.random();
+    if (r < 0.6) {
+      enemy.setData('behavior', 'wobble');
+      enemy.setData('ampx',  Phaser.Math.Between(30, 60));
+      enemy.setData('freq',  Phaser.Math.FloatBetween(1.4, 3.2));
+      enemy.setData('phase', Math.random() * Math.PI * 2);
+      enemy.setData('spawnX', x);
+    } else if (r < 0.85) {
+      enemy.setData('behavior', 'chase');
+      enemy.setData('chaseSpeed', Phaser.Math.Between(18, 32));
+    } else {
+      enemy.setData('behavior', 'straight');
+    }
+
     if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
     if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
   }
@@ -1473,8 +1489,31 @@ export default class GameScene extends Phaser.Scene {
         this.recycleBullet(b);
     });
 
+    const nowSec = this.time.now / 1000;
     this.enemies.getChildren().forEach((e) => {
       if (!e.active) return;
+      if (e !== this.activeBoss) {
+        const beh = e.getData('behavior');
+        if (beh === 'wobble') {
+          const ampx   = e.getData('ampx');
+          const freq   = e.getData('freq');
+          const phase  = e.getData('phase');
+          const spawnX = e.getData('spawnX');
+          e.x = Phaser.Math.Clamp(
+            spawnX + ampx * Math.sin(nowSec * freq + phase),
+            COMBAT_LEFT + 12, COMBAT_RIGHT - 12,
+          );
+        } else if (beh === 'chase') {
+          const sx = this.squad[0]?.x ?? WORLD_W / 2;
+          const dx = sx - e.x;
+          if (Math.abs(dx) > 4) {
+            e.x = Phaser.Math.Clamp(
+              e.x + Math.sign(dx) * e.getData('chaseSpeed') * dt,
+              COMBAT_LEFT + 12, COMBAT_RIGHT - 12,
+            );
+          }
+        }
+      }
       if (e.hpBarBg) {
         e.hpBarBg.x  = e.x;
         e.hpBarBg.y  = e.y - e.displayHeight / 2 - 8;
