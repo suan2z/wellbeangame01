@@ -662,11 +662,15 @@ export default class GameScene extends Phaser.Scene {
 
     const next = this.bossNum + 1;
     if (next > this.bossCount) {
-      // ── 스테이지 클리어 → 다음 스테이지 (무기 리셋, 점수 유지) ──
+      // ── 스테이지 클리어 → 다음 스테이지 ──
+      // 무기 + 화력 버프(데미지/연사/발사체) 초기화. 부대원·이동·점수·HP는 유지
       this.stage++;
       this.bossNum   = 0;
       this.bossCount = 4 + this.stage;
-      this.equipWeapon(STARTING_WEAPON_KEY);
+      this.damageMult   = 1;
+      this.fireRateMult = 1;
+      this.bonusCount   = 0;
+      this.equipWeapon(STARTING_WEAPON_KEY); // 내부에서 startShootTimer 호출 → 연사 리셋 반영
       this.applyStagePalette(this.stage);
       this.bossText.setText(`★ 스테이지 ${this.stage} 시작 ★ (웨이브 ${this.bossCount}개)`);
       this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
