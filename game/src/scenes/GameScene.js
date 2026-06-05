@@ -55,17 +55,26 @@ function pickEnemyType() {
 }
 
 const WEAPONS = [
-  { key: 'pistol',  name: '권총',     damage: 1, interval: 300, speed: 700, count: 1, spread: 0,  color: 0xffe066 },
-  { key: 'smg',     name: '기관단총', damage: 1, interval: 150, speed: 700, count: 1, spread: 0,  color: 0x4cffc2 },
-  { key: 'shotgun', name: '샷건',     damage: 1, interval: 600, speed: 620, count: 5, spread: 35, color: 0xff9933 },
-  { key: 'rifle',   name: '라이플',   damage: 3, interval: 350, speed: 850, count: 1, spread: 0,  color: 0x4cc2ff },
-  { key: 'mg',      name: '기관총',   damage: 2, interval: 100, speed: 700, count: 1, spread: 0,  color: 0xff5577 },
+  { key: 'pistol',     tier: 1,  name: '권총',         damage: 1, interval: 300, speed: 700,  count: 1, spread: 0,  color: 0xffe066 },
+  { key: 'smg',        tier: 2,  name: '기관단총',     damage: 1, interval: 150, speed: 700,  count: 1, spread: 0,  color: 0x4cffc2 },
+  { key: 'shotgun',    tier: 3,  name: '샷건',         damage: 1, interval: 600, speed: 620,  count: 5, spread: 35, color: 0xff9933 },
+  { key: 'rifle',      tier: 4,  name: '라이플',       damage: 3, interval: 350, speed: 850,  count: 1, spread: 0,  color: 0x4cc2ff },
+  { key: 'dualpistol', tier: 5,  name: '듀얼권총',     damage: 1, interval: 220, speed: 700,  count: 2, spread: 12, color: 0xf4d97e },
+  { key: 'sniper',     tier: 6,  name: '저격총',       damage: 8, interval: 600, speed: 1100, count: 1, spread: 0,  color: 0xa066ff },
+  { key: 'flame',      tier: 7,  name: '화염방사기',   damage: 1, interval: 70,  speed: 500,  count: 1, spread: 18, color: 0xff5a18 },
+  { key: 'mg',         tier: 8,  name: '기관총',       damage: 2, interval: 100, speed: 700,  count: 1, spread: 0,  color: 0xff5577 },
+  { key: 'cannon',     tier: 9,  name: '핸드캐논',     damage: 7, interval: 300, speed: 900,  count: 1, spread: 0,  color: 0xd03030 },
+  { key: 'gauss',      tier: 10, name: '가우스라이플', damage: 4, interval: 130, speed: 950,  count: 2, spread: 8,  color: 0x80ffff },
 ];
 
 const STARTING_WEAPON_KEY = 'pistol';
 
 function getWeapon(key) {
   return WEAPONS.find((w) => w.key === key) ?? WEAPONS[0];
+}
+
+function weaponLabel(w) {
+  return `[T${w.tier}] ${w.name}`;
 }
 
 // 부대원 아이템: 좌/우 랜덤, 3~5초 간격
@@ -567,7 +576,7 @@ export default class GameScene extends Phaser.Scene {
     this.squadText = this.add.text(WORLD_W / 2, 18, `부대원 ${this.squad.length}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#3ad27a', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
-    this.weaponText = this.add.text(WORLD_W / 2, 44, this.weapon.name, {
+    this.weaponText = this.add.text(WORLD_W / 2, 44, weaponLabel(this.weapon), {
       fontFamily: 'monospace', fontSize: '14px',
       color: rgbHex(this.weapon.color), fontStyle: 'bold',
     }).setOrigin(0.5, 0);
@@ -891,13 +900,13 @@ export default class GameScene extends Phaser.Scene {
     box.hpBarW  = barW;
 
     if (!box.label) {
-      box.label = this.add.text(spawnX, startY, droppedWeapon.name, {
+      box.label = this.add.text(spawnX, startY, weaponLabel(droppedWeapon), {
         fontFamily: 'monospace', fontSize: '11px',
         color: rgbHex(droppedWeapon.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
       box.label.setVisible(true).setPosition(spawnX, startY)
-        .setText(droppedWeapon.name).setColor(rgbHex(droppedWeapon.color));
+        .setText(weaponLabel(droppedWeapon)).setColor(rgbHex(droppedWeapon.color));
     }
   }
 
@@ -921,19 +930,19 @@ export default class GameScene extends Phaser.Scene {
     item.body.setVelocity(0, WEAPON_PICKUP_FALL_SPEED);
     item.setData('weaponKey', weaponKey);
     if (!item.label) {
-      item.label = this.add.text(x, y, w.name, {
+      item.label = this.add.text(x, y, weaponLabel(w), {
         fontFamily: 'monospace', fontSize: '13px',
         color: rgbHex(w.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
-      item.label.setVisible(true).setPosition(x, y).setText(w.name).setColor(rgbHex(w.color));
+      item.label.setVisible(true).setPosition(x, y).setText(weaponLabel(w)).setColor(rgbHex(w.color));
     }
   }
 
   equipWeapon(weaponKey) {
     const next = getWeapon(weaponKey);
     this.weapon = next;
-    this.weaponText.setText(next.name);
+    this.weaponText.setText(weaponLabel(next));
     this.weaponText.setColor(rgbHex(next.color));
     this.tweens.add({ targets: this.weaponText, scale: { from: 1.6, to: 1 }, duration: 250 });
     this.startShootTimer();
