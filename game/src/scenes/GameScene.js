@@ -642,8 +642,9 @@ export default class GameScene extends Phaser.Scene {
       this.bossNum   = 0;
       this.bossCount = 4 + this.stage;
       this.equipWeapon(STARTING_WEAPON_KEY);
-      this.bossText.setText(`★ 스테이지 ${this.stage} ★ (보스 ${this.bossCount})`);
+      this.bossText.setText(`★ 스테이지 ${this.stage} 시작 ★ (웨이브 ${this.bossCount}개)`);
       this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
+      this.showStagePopup(this.stage, this.bossCount);
       this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       return;
     }
@@ -683,7 +684,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.activeBoss = boss;
     this.sfx.bossAppear();
-    this.bossText.setText(`S${this.stage} · 보스 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
+    this.bossText.setText(`스테이지 ${this.stage} · 웨이브 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
   }
 
@@ -947,6 +948,8 @@ export default class GameScene extends Phaser.Scene {
         this.activeBoss = null;
         this.stopBossFire();
         this.clearBossBullets();
+        const isStageClear = this.bossNum >= this.bossCount;
+        this.showWavePopup(this.bossNum, this.bossCount, isStageClear);
         this.showBuffSelection();
       }
     } else {
@@ -1128,6 +1131,34 @@ export default class GameScene extends Phaser.Scene {
       duration: big ? 1200 : 700,
       onComplete: () => text.destroy(),
     });
+  }
+
+  showWavePopup(num, total, isStageClear) {
+    const label = isStageClear
+      ? `★ 스테이지 ${this.stage} 클리어 ★`
+      : `웨이브 ${num}/${total} 클리어!`;
+    const color = isStageClear ? '#ffe066' : '#4cc2ff';
+    const fontSize = isStageClear ? '34px' : '22px';
+    const t = this.add.text(WORLD_W / 2, WORLD_H * 0.35, label, {
+      fontFamily: 'sans-serif', fontSize, color, fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(15);
+    this.tweens.add({
+      targets: t,
+      y: WORLD_H * 0.28,
+      alpha: 0,
+      duration: isStageClear ? 1800 : 1100,
+      onComplete: () => t.destroy(),
+    });
+  }
+
+  showStagePopup(stage, waves) {
+    const t1 = this.add.text(WORLD_W / 2, WORLD_H * 0.4, `STAGE ${stage}`, {
+      fontFamily: 'sans-serif', fontSize: '56px', color: '#ffe066', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(15);
+    const t2 = this.add.text(WORLD_W / 2, WORLD_H * 0.48, `${waves} 웨이브 진행`, {
+      fontFamily: 'sans-serif', fontSize: '22px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(15);
+    this.tweens.add({ targets: [t1, t2], alpha: 0, duration: 2000, delay: 400, onComplete: () => { t1.destroy(); t2.destroy(); } });
   }
 
   onPointer(pointer) {
