@@ -115,6 +115,18 @@ const STAGE_ADVANCE_MS = 30000;
 const WEAPON_PICKUP_RADIUS    = 16;
 const WEAPON_PICKUP_FALL_SPEED = 70;
 
+// 스테이지별 배경 팔레트 (순환)
+const STAGE_PALETTES = [
+  { base: 0x080818, neb1: 0x18083c, neb2: 0x081828, neb3: 0x200828 }, // S1 보라/딥스페이스
+  { base: 0x041814, neb1: 0x083c2c, neb2: 0x0c2818, neb3: 0x102822 }, // S2 청록
+  { base: 0x180404, neb1: 0x3c0808, neb2: 0x281418, neb3: 0x281008 }, // S3 적색
+  { base: 0x080418, neb1: 0x1818a0, neb2: 0x102060, neb3: 0x0a1a40 }, // S4 블루
+  { base: 0x180810, neb1: 0x4a2a18, neb2: 0x3a1a08, neb3: 0x281408 }, // S5 노을
+];
+function paletteFor(stage) {
+  return STAGE_PALETTES[(stage - 1) % STAGE_PALETTES.length];
+}
+
 // 보스 처치 보상: 3중 1 버프 선택 (그 판 한정 누적)
 const BUFF_POOL = [
   { key: 'dmg',   name: '데미지 +25%',  desc: '모든 발사체 피해 증가', apply: (s) => { s.damageMult *= 1.25; } },
@@ -485,22 +497,26 @@ export default class GameScene extends Phaser.Scene {
     this.bonusCount   = 0;
     if (!this.sfx) this.sfx = new Sfx();
 
-    // 배경 — 딥 스페이스
-    this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x080818);
-    // 성운 오버레이
-    this.add.rectangle(WORLD_W / 2, WORLD_H * 0.3, WORLD_W, WORLD_H * 0.44, 0x18083c, 0.38);
-    this.add.rectangle(WORLD_W * 0.3, WORLD_H * 0.65, WORLD_W * 0.5, WORLD_H * 0.32, 0x081828, 0.28);
-    this.add.rectangle(WORLD_W * 0.75, WORLD_H * 0.5, WORLD_W * 0.4, WORLD_H * 0.28, 0x200828, 0.22);
-    // 별 — 크기/밝기 다양
+    // 배경 — 딥 스페이스 (스테이지별 팔레트로 갱신됨)
+    this.bgBase = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x080818);
+    this.bgNeb1 = this.add.rectangle(WORLD_W / 2,     WORLD_H * 0.3,  WORLD_W,        WORLD_H * 0.44, 0x18083c, 0.38);
+    this.bgNeb2 = this.add.rectangle(WORLD_W * 0.3,   WORLD_H * 0.65, WORLD_W * 0.5,  WORLD_H * 0.32, 0x081828, 0.28);
+    this.bgNeb3 = this.add.rectangle(WORLD_W * 0.75,  WORLD_H * 0.5,  WORLD_W * 0.4,  WORLD_H * 0.28, 0x200828, 0.22);
+
+    // 흐르는 별 (parallax — 큰 별은 빠르게, 작은 별은 느리게)
+    this.stars = [];
     for (let i = 0; i < 100; i++) {
       const bright = Phaser.Math.FloatBetween(0.15, 0.95);
       const scale  = bright > 0.75 ? Phaser.Math.FloatBetween(1.2, 2.2) : Phaser.Math.FloatBetween(0.4, 1.0);
-      this.add.image(
+      const star = this.add.image(
         Phaser.Math.Between(0, WORLD_W),
         Phaser.Math.Between(0, WORLD_H),
         'tex_star'
       ).setAlpha(bright).setScale(scale);
+      star.vy = scale > 1.0 ? Phaser.Math.Between(55, 80) : Phaser.Math.Between(18, 32);
+      this.stars.push(star);
     }
+    this.applyStagePalette(this.stage);
 
     // 좌우 부대원 아이템 구역 (부드러운 연두 띠)
     this.add.rectangle(ZONE_W / 2,            WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.07);
@@ -642,6 +658,7 @@ export default class GameScene extends Phaser.Scene {
       this.bossNum   = 0;
       this.bossCount = 4 + this.stage;
       this.equipWeapon(STARTING_WEAPON_KEY);
+      this.applyStagePalette(this.stage);
       this.bossText.setText(`★ 스테이지 ${this.stage} 시작 ★ (웨이브 ${this.bossCount}개)`);
       this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
       this.showStagePopup(this.stage, this.bossCount);
@@ -1151,6 +1168,15 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  applyStagePalette(stage) {
+    if (!this.bgBase) return;
+    const p = paletteFor(stage);
+    this.bgBase.setFillStyle(p.base);
+    this.bgNeb1.setFillStyle(p.neb1, 0.38);
+    this.bgNeb2.setFillStyle(p.neb2, 0.28);
+    this.bgNeb3.setFillStyle(p.neb3, 0.22);
+  }
+
   showStagePopup(stage, waves) {
     const t1 = this.add.text(WORLD_W / 2, WORLD_H * 0.4, `STAGE ${stage}`, {
       fontFamily: 'sans-serif', fontSize: '56px', color: '#ffe066', fontStyle: 'bold',
@@ -1253,6 +1279,17 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver || this.choosing) return;
     const dt      = deltaMs / 1000;
     const maxStep = PLAYER_SPEED * this.moveMult * dt;
+
+    if (this.stars) {
+      for (let i = 0; i < this.stars.length; i++) {
+        const s = this.stars[i];
+        s.y += s.vy * dt;
+        if (s.y > WORLD_H + 10) {
+          s.y = -10;
+          s.x = Phaser.Math.Between(0, WORLD_W);
+        }
+      }
+    }
 
     this.squad.forEach((m) => {
       if (!m.active) return;
