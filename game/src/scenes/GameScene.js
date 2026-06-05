@@ -768,25 +768,8 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     if (this.activeBoss) return;
 
+    // 스테이지 진행/클리어는 stageClearTransition()이 담당. 여기선 다음 웨이브 보스만 스폰.
     const next = this.bossNum + 1;
-    if (next > this.bossCount) {
-      // ── 스테이지 클리어 → 다음 스테이지 ──
-      // 무기 + 화력 버프(데미지/연사/발사체) 초기화. 부대원·이동·점수·HP는 유지
-      this.stage++;
-      this.bossNum   = 0;
-      this.bossCount = 4 + this.stage;
-      this.damageMult   = 1;
-      this.fireRateMult = 1;
-      this.bonusCount   = 0;
-      this.equipWeapon(STARTING_WEAPON_KEY); // 내부에서 startShootTimer 호출 → 연사 리셋 반영
-      this.applyStagePalette(this.stage);
-      this.bossText.setText(`★ 스테이지 ${this.stage} 시작 ★ (웨이브 ${this.bossCount}개)`);
-      this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
-      this.showStagePopup(this.stage, this.bossCount);
-      this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
-      return;
-    }
-
     this.bossNum = next;
     // 보스 외형은 5종 텍스처를 순환 사용 (보스6 = 보스1 외형, ...)
     const def = BOSS_STAGES[(next - 1) % BOSS_STAGES.length];
@@ -961,7 +944,7 @@ export default class GameScene extends Phaser.Scene {
   // ─── 적 스폰 ─────────────────────────────────────────────
 
   spawnEnemy() {
-    if (this.gameOver) return;
+    if (this.gameOver || this.choosing) return;
     const x    = Phaser.Math.Between(COMBAT_LEFT + 20, COMBAT_RIGHT - 20);
     const type = pickEnemyType();
     const enemy = this.enemies.get(x, -type.radius, type.tex);
@@ -982,7 +965,7 @@ export default class GameScene extends Phaser.Scene {
   // ─── 무기 상자 ───────────────────────────────────────────
 
   spawnWeaponBox() {
-    if (this.gameOver) return;
+    if (this.gameOver || this.choosing) return;
     const spawnX = WEAPON_BOX_SPAWN_XS[Phaser.Math.Between(0, WEAPON_BOX_SPAWN_XS.length - 1)];
     const startY = -WEAPON_BOX_RADIUS * 2;
     const box    = this.weaponBoxes.get(spawnX, startY, 'tex_weapon_box');
@@ -1095,9 +1078,13 @@ export default class GameScene extends Phaser.Scene {
         this.activeBoss = null;
         this.stopBossFire();
         this.clearBossBullets();
-        const isStageClear = this.bossNum >= this.bossCount;
-        this.showWavePopup(this.bossNum, this.bossCount, isStageClear);
-        this.showBuffSelection();
+        if (this.bossNum >= this.bossCount) {
+          // 스테이지 마지막 보스 → 클리어 연출 (버프는 어차피 초기화되므로 생략)
+          this.stageClearTransition();
+        } else {
+          this.showWavePopup(this.bossNum, this.bossCount);
+          this.showBuffSelection();
+        }
       }
     } else {
       enemy.setData('hp', hp);
@@ -1280,20 +1267,12 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  showWavePopup(num, total, isStageClear) {
-    const label = isStageClear
-      ? `★ 스테이지 ${this.stage} 클리어 ★`
-      : `웨이브 ${num}/${total} 클리어!`;
-    const color = isStageClear ? '#ffe066' : '#4cc2ff';
-    const fontSize = isStageClear ? '34px' : '22px';
-    const t = this.add.text(WORLD_W / 2, WORLD_H * 0.35, label, {
-      fontFamily: 'sans-serif', fontSize, color, fontStyle: 'bold',
+  showWavePopup(num, total) {
+    const t = this.add.text(WORLD_W / 2, WORLD_H * 0.35, `웨이브 ${num}/${total} 클리어!`, {
+      fontFamily: 'sans-serif', fontSize: '22px', color: '#4cc2ff', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(15);
     this.tweens.add({
-      targets: t,
-      y: WORLD_H * 0.28,
-      alpha: 0,
-      duration: isStageClear ? 1800 : 1100,
+      targets: t, y: WORLD_H * 0.28, alpha: 0, duration: 1100,
       onComplete: () => t.destroy(),
     });
   }
@@ -1307,14 +1286,73 @@ export default class GameScene extends Phaser.Scene {
     this.bgNeb3.setFillStyle(p.neb3, 0.22);
   }
 
-  showStagePopup(stage, waves) {
-    const t1 = this.add.text(WORLD_W / 2, WORLD_H * 0.4, `STAGE ${stage}`, {
-      fontFamily: 'sans-serif', fontSize: '56px', color: '#ffe066', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(15);
-    const t2 = this.add.text(WORLD_W / 2, WORLD_H * 0.48, `${waves} 웨이브 진행`, {
-      fontFamily: 'sans-serif', fontSize: '22px', color: '#ffffff',
-    }).setOrigin(0.5).setDepth(15);
-    this.tweens.add({ targets: [t1, t2], alpha: 0, duration: 2000, delay: 400, onComplete: () => { t1.destroy(); t2.destroy(); } });
+  // 필드 정리 (스테이지 전환 시 적/탄/상자/아이템 초기화. 부대원은 유지)
+  clearStageField() {
+    const wipe = (grp) => grp.getChildren().forEach((o) => {
+      if (!o.active) return;
+      if (o.hpBarBg) { o.hpBarBg.destroy(); o.hpBarBg = null; }
+      if (o.hpBarFg) { o.hpBarFg.destroy(); o.hpBarFg = null; }
+      if (o.label) o.label.setVisible(false);
+      o.disableBody(true, true);
+    });
+    wipe(this.enemies);
+    wipe(this.bullets);
+    wipe(this.bossBullets);
+    wipe(this.weaponBoxes);
+    wipe(this.weaponPickups);
+    wipe(this.squadItems);
+  }
+
+  // 스테이지 클리어 → 페이드아웃 → 리셋 → STAGE N 연출 → 페이드인 → 다음 스테이지
+  stageClearTransition() {
+    this.choosing = true;     // update/사격/입력 정지 (게임 진행 멈춤)
+    this.physics.pause();
+    const cleared = this.stage;
+
+    const msg = this.add.text(WORLD_W / 2, WORLD_H / 2, `★ 스테이지 ${cleared} 클리어! ★`, {
+      fontFamily: 'sans-serif', fontSize: '40px', color: '#ffe066', fontStyle: 'bold', align: 'center',
+    }).setOrigin(0.5).setDepth(30);
+    this.tweens.add({ targets: msg, scale: { from: 0.4, to: 1 }, duration: 400, ease: 'Back.easeOut' });
+    this.sfx.squadGain();
+
+    this.time.delayedCall(1200, () => this.cameras.main.fadeOut(500, 0, 0, 0));
+
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      msg.destroy();
+      this.clearStageField();
+
+      // 무기 + 화력 버프 초기화 (점수·부대원·이동/점수 버프는 유지), 다음 스테이지 세팅
+      this.stage++;
+      this.bossNum   = 0;
+      this.bossCount = 4 + this.stage;
+      this.damageMult   = 1;
+      this.fireRateMult = 1;
+      this.bonusCount   = 0;
+      this.equipWeapon(STARTING_WEAPON_KEY);
+      this.applyStagePalette(this.stage);
+      this.bossText.setText('');
+
+      const t1 = this.add.text(WORLD_W / 2, WORLD_H / 2 - 24, `STAGE ${this.stage}`, {
+        fontFamily: 'sans-serif', fontSize: '64px', color: '#ffffff', fontStyle: 'bold',
+      }).setOrigin(0.5).setDepth(30);
+      const t2 = this.add.text(WORLD_W / 2, WORLD_H / 2 + 36, `웨이브 ${this.bossCount}개`, {
+        fontFamily: 'sans-serif', fontSize: '24px', color: '#ffe066',
+      }).setOrigin(0.5).setDepth(30);
+
+      this.cameras.main.fadeIn(500, 0, 0, 0);
+      this.cameras.main.once('camerafadeincomplete', () => {
+        this.tweens.add({ targets: t1, scale: { from: 0.6, to: 1 }, duration: 300, ease: 'Back.easeOut' });
+        this.time.delayedCall(900, () => {
+          this.tweens.add({
+            targets: [t1, t2], alpha: 0, duration: 400,
+            onComplete: () => { t1.destroy(); t2.destroy(); },
+          });
+          this.choosing = false;
+          this.physics.resume();
+          this.time.delayedCall(300, () => this.spawnNextBoss());
+        });
+      });
+    });
   }
 
   onPointer(pointer) {
