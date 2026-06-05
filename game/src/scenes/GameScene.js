@@ -77,6 +77,23 @@ function weaponLabel(w) {
   return `[T${w.tier}] ${w.name}`;
 }
 
+// 색 보간 유틸 (무기 등급별 외형 생성용)
+function blendHex(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const c = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | c;
+}
+const darken  = (c, f) => blendHex(c, 0x000000, f);
+const lighten = (c, f) => blendHex(c, 0xffffff, f);
+
+// 무기별 부대원 텍스처 키
+function playerTexKey(weapon) {
+  return `tex_player_${weapon.key}`;
+}
+
 // 부대원 아이템: 좌/우 랜덤, 3~5초 간격
 const SQUAD_ITEM_LEFT_X  = ZONE_W / 2;
 const SQUAD_ITEM_RIGHT_X = WORLD_W - ZONE_W / 2;
@@ -179,7 +196,7 @@ export default class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   preload() {
-    this.makeCutePlaneTexture('tex_player');
+    for (const w of WEAPONS) this.makePlaneTextureForWeapon(playerTexKey(w), w);
     this.makeCuteBulletTexture('tex_bullet');
     this.makeCircleTexture('tex_star', 2, 0xffffff);
     for (const t of ENEMY_TYPES) this.makeCuteEnemyTexture(t.tex, t.radius, t.color);
@@ -224,6 +241,97 @@ export default class GameScene extends Phaser.Scene {
     g.fillEllipse(cx, 46, 10, 8);
     g.fillStyle(0xffdd00, 1);
     g.fillEllipse(cx, 45, 6, 5);
+
+    g.generateTexture(key, W, H);
+    g.destroy();
+  }
+
+  // 무기 등급(T1~T10)에 따라 점점 강력해 보이는 전투기 텍스처.
+  // 무기색(accent)을 동체/배기/날개끝에 반영해 무기 종류별로도 외형이 달라짐.
+  makePlaneTextureForWeapon(key, weapon) {
+    const tier   = weapon.tier;
+    const accent = weapon.color;
+    const power  = (tier - 1) / 9; // 0(T1) ~ 1(T10)
+    const W = 48, H = 58, cx = W / 2, cy = 28;
+    const g = this.add.graphics();
+
+    const bodyCol = blendHex(0x6fd2ff, accent, 0.30 + power * 0.40);
+    const wingCol = darken(blendHex(0x2ba8e8, accent, 0.35 + power * 0.40), 0.10 + power * 0.25);
+
+    // ── 에너지 오라 (고티어일수록 강하게) ──
+    if (tier >= 9) {
+      g.fillStyle(accent, 0.16); g.fillCircle(cx, cy, 26);
+      g.fillStyle(accent, 0.10); g.fillCircle(cx, cy, 30);
+    } else if (tier >= 6) {
+      g.fillStyle(accent, 0.10); g.fillCircle(cx, cy, 24);
+    }
+
+    // ── 주 날개 (등급↑ → 더 넓고 더 뒤로 후퇴) ──
+    const span  = 10 + power * 9;
+    const sweep = 4 + power * 8;
+    const wingY = cy - 2;
+    g.fillStyle(wingCol, 1);
+    g.fillTriangle(cx - 6, wingY - 6, cx - 6 - span, wingY + sweep, cx - 6, wingY + 8);
+    g.fillTriangle(cx + 6, wingY - 6, cx + 6 + span, wingY + sweep, cx + 6, wingY + 8);
+    // 날개끝 무기색 스트라이프
+    g.fillStyle(accent, 0.95);
+    g.fillTriangle(cx - 6 - span, wingY + sweep, cx - 2 - span, wingY + sweep - 2, cx - 3 - span, wingY + sweep + 3);
+    g.fillTriangle(cx + 6 + span, wingY + sweep, cx + 2 + span, wingY + sweep - 2, cx + 3 + span, wingY + sweep + 3);
+
+    // ── 무기 포드 (T6+) : 날개 아래 총열 ──
+    if (tier >= 6) {
+      g.fillStyle(darken(accent, 0.2), 1);
+      g.fillRoundedRect(cx - 6 - span * 0.6, wingY + 2, 4, 12, 2);
+      g.fillRoundedRect(cx + 6 + span * 0.6 - 4, wingY + 2, 4, 12, 2);
+    }
+
+    // ── 카나드(앞날개) (T7+) ──
+    if (tier >= 7) {
+      g.fillStyle(wingCol, 1);
+      g.fillTriangle(cx - 5, cy - 12, cx - 13, cy - 8, cx - 5, cy - 6);
+      g.fillTriangle(cx + 5, cy - 12, cx + 13, cy - 8, cx + 5, cy - 6);
+    }
+
+    // ── 꼬리날개 ──
+    g.fillStyle(wingCol, 1);
+    g.fillTriangle(cx - 7, cy + 12, cx - 7, H - 4, cx - 1, H - 4);
+    g.fillTriangle(cx + 7, cy + 12, cx + 1, H - 4, cx + 7, H - 4);
+
+    // ── 동체 ──
+    const noseY = 2 - power;
+    g.fillStyle(bodyCol, 1);
+    g.fillTriangle(cx - 8, cy - 14, cx, noseY, cx + 8, cy - 14);
+    g.fillRoundedRect(cx - 8, cy - 16, 16, 34, 7);
+    g.fillStyle(lighten(bodyCol, 0.3), 0.7);
+    g.fillRoundedRect(cx - 5, cy - 14, 4, 28, 3);
+    // 장갑판 (T8+)
+    if (tier >= 8) {
+      g.fillStyle(darken(bodyCol, 0.35), 0.85);
+      g.fillRect(cx - 8, cy - 2, 16, 4);
+      g.fillRect(cx - 8, cy + 8, 16, 3);
+    }
+
+    // ── 콕핏 ──
+    const cockGlow = tier >= 9 ? lighten(accent, 0.4) : 0xffe98a;
+    g.fillStyle(cockGlow, 1); g.fillCircle(cx, cy - 11, 5);
+    g.fillStyle(0xffffff, 1);  g.fillCircle(cx - 2, cy - 13, 2);
+
+    // ── 엔진 배기 (T5+ 2기, T8+ 3기) ──
+    const engineXs = tier >= 8 ? [cx - 6, cx, cx + 6]
+                   : tier >= 5 ? [cx - 5, cx + 5]
+                   : [cx];
+    for (const ex of engineXs) {
+      g.fillStyle(0xff8800, 1);              g.fillEllipse(ex, H - 8, 8, 7);
+      g.fillStyle(accent, 1);                g.fillEllipse(ex, H - 9, 5, 5);
+      g.fillStyle(lighten(accent, 0.5), 1);  g.fillEllipse(ex, H - 10, 2.5, 3);
+    }
+
+    // ── 윙팁 스파이크 (T10) ──
+    if (tier >= 10) {
+      g.fillStyle(lighten(accent, 0.3), 1);
+      g.fillTriangle(cx - 6 - span, wingY + sweep - 1, cx - 11 - span, wingY + sweep + 1, cx - 6 - span, wingY + sweep + 3);
+      g.fillTriangle(cx + 6 + span, wingY + sweep - 1, cx + 11 + span, wingY + sweep + 1, cx + 6 + span, wingY + sweep + 3);
+    }
 
     g.generateTexture(key, W, H);
     g.destroy();
@@ -777,7 +885,7 @@ export default class GameScene extends Phaser.Scene {
   addSquadMember(count = 1) {
     for (let i = 0; i < count; i++) {
       if (this.squad.length >= SQUAD_MAX) break;
-      const m = this.physics.add.sprite(this.targetX, PLAYER_Y, 'tex_player');
+      const m = this.physics.add.sprite(this.targetX, PLAYER_Y, playerTexKey(this.weapon));
       m.body.setSize(28, 28);
       this.squadGroup.add(m);
       this.squad.push(m);
@@ -951,6 +1059,13 @@ export default class GameScene extends Phaser.Scene {
     this.weaponText.setText(weaponLabel(next));
     this.weaponText.setColor(rgbHex(next.color));
     this.tweens.add({ targets: this.weaponText, scale: { from: 1.6, to: 1 }, duration: 250 });
+    // 부대원 외형을 새 무기 등급에 맞게 교체 + 변신 팝 연출
+    const texKey = playerTexKey(next);
+    this.squad.forEach((m) => {
+      if (!m.active) return;
+      m.setTexture(texKey);
+      this.tweens.add({ targets: m, scale: { from: 1.35, to: 1 }, duration: 220, ease: 'Back.easeOut' });
+    });
     this.startShootTimer();
   }
 
