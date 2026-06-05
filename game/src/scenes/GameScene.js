@@ -55,17 +55,26 @@ function pickEnemyType() {
 }
 
 const WEAPONS = [
-  { key: 'pistol',  name: '권총',     damage: 1, interval: 300, speed: 700, count: 1, spread: 0,  color: 0xffe066 },
-  { key: 'smg',     name: '기관단총', damage: 1, interval: 150, speed: 700, count: 1, spread: 0,  color: 0x4cffc2 },
-  { key: 'shotgun', name: '샷건',     damage: 1, interval: 600, speed: 620, count: 5, spread: 35, color: 0xff9933 },
-  { key: 'rifle',   name: '라이플',   damage: 3, interval: 350, speed: 850, count: 1, spread: 0,  color: 0x4cc2ff },
-  { key: 'mg',      name: '기관총',   damage: 2, interval: 100, speed: 700, count: 1, spread: 0,  color: 0xff5577 },
+  { key: 'pistol',     tier: 1,  name: '권총',         damage: 1, interval: 300, speed: 700,  count: 1, spread: 0,  color: 0xffe066 },
+  { key: 'smg',        tier: 2,  name: '기관단총',     damage: 1, interval: 150, speed: 700,  count: 1, spread: 0,  color: 0x4cffc2 },
+  { key: 'shotgun',    tier: 3,  name: '샷건',         damage: 1, interval: 600, speed: 620,  count: 5, spread: 35, color: 0xff9933 },
+  { key: 'rifle',      tier: 4,  name: '라이플',       damage: 3, interval: 350, speed: 850,  count: 1, spread: 0,  color: 0x4cc2ff },
+  { key: 'dualpistol', tier: 5,  name: '듀얼권총',     damage: 1, interval: 220, speed: 700,  count: 2, spread: 12, color: 0xf4d97e },
+  { key: 'sniper',     tier: 6,  name: '저격총',       damage: 8, interval: 600, speed: 1100, count: 1, spread: 0,  color: 0xa066ff },
+  { key: 'flame',      tier: 7,  name: '화염방사기',   damage: 1, interval: 70,  speed: 500,  count: 1, spread: 18, color: 0xff5a18 },
+  { key: 'mg',         tier: 8,  name: '기관총',       damage: 2, interval: 100, speed: 700,  count: 1, spread: 0,  color: 0xff5577 },
+  { key: 'cannon',     tier: 9,  name: '핸드캐논',     damage: 7, interval: 300, speed: 900,  count: 1, spread: 0,  color: 0xd03030 },
+  { key: 'gauss',      tier: 10, name: '가우스라이플', damage: 4, interval: 130, speed: 950,  count: 2, spread: 8,  color: 0x80ffff },
 ];
 
 const STARTING_WEAPON_KEY = 'pistol';
 
 function getWeapon(key) {
   return WEAPONS.find((w) => w.key === key) ?? WEAPONS[0];
+}
+
+function weaponLabel(w) {
+  return `[T${w.tier}] ${w.name}`;
 }
 
 // 부대원 아이템: 좌/우 랜덤, 3~5초 간격
@@ -114,6 +123,18 @@ const STAGE_ADVANCE_MS = 30000;
 
 const WEAPON_PICKUP_RADIUS    = 16;
 const WEAPON_PICKUP_FALL_SPEED = 70;
+
+// 스테이지별 배경 팔레트 (순환)
+const STAGE_PALETTES = [
+  { base: 0x080818, neb1: 0x18083c, neb2: 0x081828, neb3: 0x200828 }, // S1 보라/딥스페이스
+  { base: 0x041814, neb1: 0x083c2c, neb2: 0x0c2818, neb3: 0x102822 }, // S2 청록
+  { base: 0x180404, neb1: 0x3c0808, neb2: 0x281418, neb3: 0x281008 }, // S3 적색
+  { base: 0x080418, neb1: 0x1818a0, neb2: 0x102060, neb3: 0x0a1a40 }, // S4 블루
+  { base: 0x180810, neb1: 0x4a2a18, neb2: 0x3a1a08, neb3: 0x281408 }, // S5 노을
+];
+function paletteFor(stage) {
+  return STAGE_PALETTES[(stage - 1) % STAGE_PALETTES.length];
+}
 
 // 보스 처치 보상: 3중 1 버프 선택 (그 판 한정 누적)
 const BUFF_POOL = [
@@ -485,22 +506,26 @@ export default class GameScene extends Phaser.Scene {
     this.bonusCount   = 0;
     if (!this.sfx) this.sfx = new Sfx();
 
-    // 배경 — 딥 스페이스
-    this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x080818);
-    // 성운 오버레이
-    this.add.rectangle(WORLD_W / 2, WORLD_H * 0.3, WORLD_W, WORLD_H * 0.44, 0x18083c, 0.38);
-    this.add.rectangle(WORLD_W * 0.3, WORLD_H * 0.65, WORLD_W * 0.5, WORLD_H * 0.32, 0x081828, 0.28);
-    this.add.rectangle(WORLD_W * 0.75, WORLD_H * 0.5, WORLD_W * 0.4, WORLD_H * 0.28, 0x200828, 0.22);
-    // 별 — 크기/밝기 다양
+    // 배경 — 딥 스페이스 (스테이지별 팔레트로 갱신됨)
+    this.bgBase = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x080818);
+    this.bgNeb1 = this.add.rectangle(WORLD_W / 2,     WORLD_H * 0.3,  WORLD_W,        WORLD_H * 0.44, 0x18083c, 0.38);
+    this.bgNeb2 = this.add.rectangle(WORLD_W * 0.3,   WORLD_H * 0.65, WORLD_W * 0.5,  WORLD_H * 0.32, 0x081828, 0.28);
+    this.bgNeb3 = this.add.rectangle(WORLD_W * 0.75,  WORLD_H * 0.5,  WORLD_W * 0.4,  WORLD_H * 0.28, 0x200828, 0.22);
+
+    // 흐르는 별 (parallax — 큰 별은 빠르게, 작은 별은 느리게)
+    this.stars = [];
     for (let i = 0; i < 100; i++) {
       const bright = Phaser.Math.FloatBetween(0.15, 0.95);
       const scale  = bright > 0.75 ? Phaser.Math.FloatBetween(1.2, 2.2) : Phaser.Math.FloatBetween(0.4, 1.0);
-      this.add.image(
+      const star = this.add.image(
         Phaser.Math.Between(0, WORLD_W),
         Phaser.Math.Between(0, WORLD_H),
         'tex_star'
       ).setAlpha(bright).setScale(scale);
+      star.vy = scale > 1.0 ? Phaser.Math.Between(55, 80) : Phaser.Math.Between(18, 32);
+      this.stars.push(star);
     }
+    this.applyStagePalette(this.stage);
 
     // 좌우 부대원 아이템 구역 (부드러운 연두 띠)
     this.add.rectangle(ZONE_W / 2,            WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.07);
@@ -551,7 +576,7 @@ export default class GameScene extends Phaser.Scene {
     this.squadText = this.add.text(WORLD_W / 2, 18, `부대원 ${this.squad.length}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#3ad27a', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
-    this.weaponText = this.add.text(WORLD_W / 2, 44, this.weapon.name, {
+    this.weaponText = this.add.text(WORLD_W / 2, 44, weaponLabel(this.weapon), {
       fontFamily: 'monospace', fontSize: '14px',
       color: rgbHex(this.weapon.color), fontStyle: 'bold',
     }).setOrigin(0.5, 0);
@@ -642,8 +667,10 @@ export default class GameScene extends Phaser.Scene {
       this.bossNum   = 0;
       this.bossCount = 4 + this.stage;
       this.equipWeapon(STARTING_WEAPON_KEY);
-      this.bossText.setText(`★ 스테이지 ${this.stage} ★ (보스 ${this.bossCount})`);
+      this.applyStagePalette(this.stage);
+      this.bossText.setText(`★ 스테이지 ${this.stage} 시작 ★ (웨이브 ${this.bossCount}개)`);
       this.tweens.add({ targets: this.bossText, scale: { from: 1.8, to: 1 }, duration: 500 });
+      this.showStagePopup(this.stage, this.bossCount);
       this.time.delayedCall(BOSS_RESPAWN_DELAY_MS, () => this.spawnNextBoss());
       return;
     }
@@ -683,7 +710,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.activeBoss = boss;
     this.sfx.bossAppear();
-    this.bossText.setText(`S${this.stage} · 보스 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
+    this.bossText.setText(`스테이지 ${this.stage} · 웨이브 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
     this.tweens.add({ targets: this.bossText, scale: { from: 1.6, to: 1 }, duration: 400 });
   }
 
@@ -859,7 +886,9 @@ export default class GameScene extends Phaser.Scene {
     box.setData('hp',    hp);
     box.setData('maxHp', hp);
 
-    const droppedWeapon = WEAPONS[Phaser.Math.Between(0, WEAPONS.length - 1)];
+    const maxTier = Math.min(2 + this.stage, WEAPONS.length); // S1=T3, S2=T4, ..., S8+=T10
+    const pool = WEAPONS.filter((w) => w.tier <= maxTier);
+    const droppedWeapon = pool[Phaser.Math.Between(0, pool.length - 1)];
     box.setData('weaponKey', droppedWeapon.key);
 
     if (box.hpBarBg) { box.hpBarBg.destroy(); box.hpBarBg = null; }
@@ -873,13 +902,13 @@ export default class GameScene extends Phaser.Scene {
     box.hpBarW  = barW;
 
     if (!box.label) {
-      box.label = this.add.text(spawnX, startY, droppedWeapon.name, {
+      box.label = this.add.text(spawnX, startY, weaponLabel(droppedWeapon), {
         fontFamily: 'monospace', fontSize: '11px',
         color: rgbHex(droppedWeapon.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
       box.label.setVisible(true).setPosition(spawnX, startY)
-        .setText(droppedWeapon.name).setColor(rgbHex(droppedWeapon.color));
+        .setText(weaponLabel(droppedWeapon)).setColor(rgbHex(droppedWeapon.color));
     }
   }
 
@@ -903,19 +932,19 @@ export default class GameScene extends Phaser.Scene {
     item.body.setVelocity(0, WEAPON_PICKUP_FALL_SPEED);
     item.setData('weaponKey', weaponKey);
     if (!item.label) {
-      item.label = this.add.text(x, y, w.name, {
+      item.label = this.add.text(x, y, weaponLabel(w), {
         fontFamily: 'monospace', fontSize: '13px',
         color: rgbHex(w.color), fontStyle: 'bold',
       }).setOrigin(0.5);
     } else {
-      item.label.setVisible(true).setPosition(x, y).setText(w.name).setColor(rgbHex(w.color));
+      item.label.setVisible(true).setPosition(x, y).setText(weaponLabel(w)).setColor(rgbHex(w.color));
     }
   }
 
   equipWeapon(weaponKey) {
     const next = getWeapon(weaponKey);
     this.weapon = next;
-    this.weaponText.setText(next.name);
+    this.weaponText.setText(weaponLabel(next));
     this.weaponText.setColor(rgbHex(next.color));
     this.tweens.add({ targets: this.weaponText, scale: { from: 1.6, to: 1 }, duration: 250 });
     this.startShootTimer();
@@ -934,7 +963,7 @@ export default class GameScene extends Phaser.Scene {
       const wasBoss = enemy === this.activeBoss;
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.deathEmitter.explode(wasBoss ? 28 : 8, enemy.x, enemy.y);
-      this.cameras.main.shake(wasBoss ? 300 : 60, wasBoss ? 0.02 : 0.004);
+      if (wasBoss) this.cameras.main.shake(300, 0.02);
       if (wasBoss) this.sfx.bossDeath(); else this.sfx.enemyDeath();
       this.killEnemy(enemy);
       this.score += reward;
@@ -947,6 +976,8 @@ export default class GameScene extends Phaser.Scene {
         this.activeBoss = null;
         this.stopBossFire();
         this.clearBossBullets();
+        const isStageClear = this.bossNum >= this.bossCount;
+        this.showWavePopup(this.bossNum, this.bossCount, isStageClear);
         this.showBuffSelection();
       }
     } else {
@@ -968,7 +999,6 @@ export default class GameScene extends Phaser.Scene {
     const hp = box.getData('hp') - damage;
     if (hp <= 0) {
       this.deathEmitter.explode(14, box.x, box.y);
-      this.cameras.main.shake(80, 0.006);
       this.killWeaponBox(box, true);
     } else {
       box.setData('hp', hp);
@@ -1131,6 +1161,43 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  showWavePopup(num, total, isStageClear) {
+    const label = isStageClear
+      ? `★ 스테이지 ${this.stage} 클리어 ★`
+      : `웨이브 ${num}/${total} 클리어!`;
+    const color = isStageClear ? '#ffe066' : '#4cc2ff';
+    const fontSize = isStageClear ? '34px' : '22px';
+    const t = this.add.text(WORLD_W / 2, WORLD_H * 0.35, label, {
+      fontFamily: 'sans-serif', fontSize, color, fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(15);
+    this.tweens.add({
+      targets: t,
+      y: WORLD_H * 0.28,
+      alpha: 0,
+      duration: isStageClear ? 1800 : 1100,
+      onComplete: () => t.destroy(),
+    });
+  }
+
+  applyStagePalette(stage) {
+    if (!this.bgBase) return;
+    const p = paletteFor(stage);
+    this.bgBase.setFillStyle(p.base);
+    this.bgNeb1.setFillStyle(p.neb1, 0.38);
+    this.bgNeb2.setFillStyle(p.neb2, 0.28);
+    this.bgNeb3.setFillStyle(p.neb3, 0.22);
+  }
+
+  showStagePopup(stage, waves) {
+    const t1 = this.add.text(WORLD_W / 2, WORLD_H * 0.4, `STAGE ${stage}`, {
+      fontFamily: 'sans-serif', fontSize: '56px', color: '#ffe066', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(15);
+    const t2 = this.add.text(WORLD_W / 2, WORLD_H * 0.48, `${waves} 웨이브 진행`, {
+      fontFamily: 'sans-serif', fontSize: '22px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(15);
+    this.tweens.add({ targets: [t1, t2], alpha: 0, duration: 2000, delay: 400, onComplete: () => { t1.destroy(); t2.destroy(); } });
+  }
+
   onPointer(pointer) {
     if (this.gameOver) return;
     if (!pointer.isDown) return;
@@ -1223,6 +1290,17 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver || this.choosing) return;
     const dt      = deltaMs / 1000;
     const maxStep = PLAYER_SPEED * this.moveMult * dt;
+
+    if (this.stars) {
+      for (let i = 0; i < this.stars.length; i++) {
+        const s = this.stars[i];
+        s.y += s.vy * dt;
+        if (s.y > WORLD_H + 10) {
+          s.y = -10;
+          s.x = Phaser.Math.Between(0, WORLD_W);
+        }
+      }
+    }
 
     this.squad.forEach((m) => {
       if (!m.active) return;
