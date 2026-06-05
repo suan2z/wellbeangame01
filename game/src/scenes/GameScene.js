@@ -158,18 +158,287 @@ export default class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   preload() {
-    this.makeTriangleTexture('tex_player', 36, 36, 0x4cc2ff);
-    this.makeCircleTexture('tex_bullet', 5, 0xffffff);
+    this.makeCutePlaneTexture('tex_player');
+    this.makeCuteBulletTexture('tex_bullet');
     this.makeCircleTexture('tex_star', 2, 0xffffff);
-    for (const t of ENEMY_TYPES) this.makeCircleTexture(t.tex, t.radius, t.color);
-    for (const b of BOSS_STAGES)  this.makeCircleTexture(b.tex, b.radius, b.color);
-    this.makeCircleTexture('tex_squad_item',    18,                  0xffffff);
-    this.makeCircleTexture('tex_weapon_box',    WEAPON_BOX_RADIUS,   0xff2200);
-    this.makeCircleTexture('tex_weapon_pickup', WEAPON_PICKUP_RADIUS, 0xffffff);
-    this.makeCircleTexture('tex_particle', 4, 0xffffff);
-    this.makeCircleTexture('tex_boss_bullet', 8, 0xff3344);
-    this.makeRectTexture('tex_hpbar_bg', 64, 6, 0x331122);
-    this.makeRectTexture('tex_hpbar_fg', 64, 6, 0xff5577);
+    for (const t of ENEMY_TYPES) this.makeCuteEnemyTexture(t.tex, t.radius, t.color);
+    for (const b of BOSS_STAGES) this.makeCuteBossTexture(b.tex, b.radius, b.color, b.stage);
+    this.makeCuteSquadItemTexture('tex_squad_item', 18);
+    this.makeCuteWeaponBoxTexture('tex_weapon_box');
+    this.makeCuteWeaponPickupTexture('tex_weapon_pickup', WEAPON_PICKUP_RADIUS);
+    this.makeCuteParticleTexture('tex_particle');
+    this.makeCuteBossBulletTexture('tex_boss_bullet');
+    this.makeHpBarTexture('tex_hpbar_bg', 64, 6, false);
+    this.makeHpBarTexture('tex_hpbar_fg', 64, 6, true);
+  }
+
+  makeCutePlaneTexture(key) {
+    const W = 40, H = 50, cx = W / 2; // 20
+    const g = this.add.graphics();
+
+    // wings (darker blue, drawn behind body)
+    g.fillStyle(0x2ba8e8, 1);
+    g.fillTriangle(0, 28, cx - 8, 20, cx - 8, 34);
+    g.fillTriangle(cx + 8, 20, W, 28, cx + 8, 34);
+
+    // tail fins
+    g.fillTriangle(cx - 8, 38, cx - 8, H, cx - 2, H);
+    g.fillTriangle(cx + 8, 38, cx + 2, H, cx + 8, H);
+
+    // fuselage
+    g.fillStyle(0x5ecfff, 1);
+    g.fillTriangle(cx - 8, 14, cx, 0, cx + 8, 14);
+    g.fillRoundedRect(cx - 8, 12, 16, 30, 7);
+
+    // cockpit window (warm yellow)
+    g.fillStyle(0xffe98a, 1);
+    g.fillCircle(cx, 15, 5);
+
+    // cockpit shine
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(cx - 2, 13, 2);
+
+    // engine exhaust glow
+    g.fillStyle(0xff8800, 1);
+    g.fillEllipse(cx, 46, 10, 8);
+    g.fillStyle(0xffdd00, 1);
+    g.fillEllipse(cx, 45, 6, 5);
+
+    g.generateTexture(key, W, H);
+    g.destroy();
+  }
+
+  // ─── 귀여운 텍스처 생성 ─────────────────────────────────
+
+  makeCuteEnemyTexture(key, r, color) {
+    const S = r * 2 + 8, cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    // outer glow
+    g.fillStyle(color, 0.18);
+    g.fillCircle(cx, cy, r + 4);
+    // main body
+    g.fillStyle(color, 1);
+    g.fillCircle(cx, cy, r);
+    // highlight
+    g.fillStyle(0xffffff, 0.28);
+    g.fillCircle(cx - r * 0.28, cy - r * 0.28, r * 0.44);
+    // eyes
+    const er = Math.max(3, r * 0.21), ex = r * 0.3, ey = r * 0.08;
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(cx - ex, cy - ey, er);
+    g.fillCircle(cx + ex, cy - ey, er);
+    g.fillStyle(0x111122, 1);
+    g.fillCircle(cx - ex + 1, cy - ey + 1, er * 0.56);
+    g.fillCircle(cx + ex + 1, cy - ey + 1, er * 0.56);
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(cx - ex - 1, cy - ey - 1, Math.max(1, er * 0.26));
+    g.fillCircle(cx + ex - 1, cy - ey - 1, Math.max(1, er * 0.26));
+    // mouth
+    g.fillStyle(0x220011, 0.75);
+    g.fillEllipse(cx, cy + r * 0.38, r * 0.44, r * 0.22);
+    // blush
+    g.fillStyle(0xff4466, 0.28);
+    g.fillCircle(cx - r * 0.6, cy + r * 0.14, r * 0.21);
+    g.fillCircle(cx + r * 0.6, cy + r * 0.14, r * 0.21);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteBossTexture(key, r, color, stage) {
+    const spikeLen = Math.round(r * 0.28);
+    const spikeCount = 4 + stage * 2;
+    const S = (r + spikeLen + 6) * 2;
+    const cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    // spikes
+    g.fillStyle(color, 0.82);
+    for (let i = 0; i < spikeCount; i++) {
+      const ang = (i / spikeCount) * Math.PI * 2;
+      const tx = cx + Math.cos(ang) * (r + spikeLen);
+      const ty = cy + Math.sin(ang) * (r + spikeLen);
+      const hw = 0.22;
+      g.fillTriangle(
+        tx, ty,
+        cx + Math.cos(ang - hw) * (r * 0.8), cy + Math.sin(ang - hw) * (r * 0.8),
+        cx + Math.cos(ang + hw) * (r * 0.8), cy + Math.sin(ang + hw) * (r * 0.8)
+      );
+    }
+    // glow ring
+    g.fillStyle(color, 0.16);
+    g.fillCircle(cx, cy, r + 5);
+    // main body
+    g.fillStyle(color, 1);
+    g.fillCircle(cx, cy, r);
+    // inner shadow
+    g.fillStyle(0x000000, 0.2);
+    g.fillCircle(cx, cy + r * 0.14, r * 0.86);
+    // highlight
+    g.fillStyle(0xffffff, 0.2);
+    g.fillCircle(cx - r * 0.28, cy - r * 0.3, r * 0.4);
+    // face per stage
+    const er = Math.max(4, r * 0.19), ex = r * 0.32, ey = r * 0.04;
+    if (stage === 5) {
+      // glowing red eyes
+      g.fillStyle(0xff2200, 0.35); g.fillCircle(cx - ex, cy - ey, er * 1.6); g.fillCircle(cx + ex, cy - ey, er * 1.6);
+      g.fillStyle(0xff4400, 1);    g.fillCircle(cx - ex, cy - ey, er);         g.fillCircle(cx + ex, cy - ey, er);
+      g.fillStyle(0xffaa00, 1);    g.fillCircle(cx - ex, cy - ey, er * 0.48);  g.fillCircle(cx + ex, cy - ey, er * 0.48);
+      g.fillStyle(0xff2200, 0.8);  g.fillEllipse(cx, cy + r * 0.36, r * 0.62, r * 0.22);
+    } else if (stage === 4) {
+      // angular triangular eyes (cold blue)
+      g.fillStyle(0x88ddff, 1);
+      g.fillTriangle(cx - ex - er, cy - ey - er, cx - ex + er, cy - ey - er, cx - ex, cy - ey + er);
+      g.fillTriangle(cx + ex - er, cy - ey - er, cx + ex + er, cy - ey - er, cx + ex, cy - ey + er);
+      g.fillStyle(0x2233bb, 0.9);
+      g.fillRect(cx - r * 0.28, cy + r * 0.28, r * 0.56, r * 0.14);
+    } else if (stage === 3) {
+      // cyclops swirl eye
+      g.fillStyle(0xffffff, 1);   g.fillCircle(cx, cy - r * 0.08, er * 1.4);
+      g.fillStyle(0x6600cc, 1);   g.fillCircle(cx, cy - r * 0.08, er);
+      g.fillStyle(0xffffff, 1);   g.fillCircle(cx, cy - r * 0.08, er * 0.46);
+      g.fillStyle(0x000000, 1);   g.fillCircle(cx, cy - r * 0.08, er * 0.2);
+      g.fillStyle(0x440099, 0.9); g.fillEllipse(cx, cy + r * 0.36, r * 0.5, r * 0.2);
+    } else if (stage === 2) {
+      // angry squint + fangs
+      g.fillStyle(0xffee00, 1); g.fillEllipse(cx - ex, cy - ey, er * 2.2, er * 1.1); g.fillEllipse(cx + ex, cy - ey, er * 2.2, er * 1.1);
+      g.fillStyle(0x000000, 1); g.fillCircle(cx - ex + 1, cy - ey + 1, er * 0.6); g.fillCircle(cx + ex + 1, cy - ey + 1, er * 0.6);
+      g.fillStyle(0xffffff, 1);
+      g.fillTriangle(cx - r * 0.16, cy + r * 0.22, cx - r * 0.06, cy + r * 0.22, cx - r * 0.11, cy + r * 0.42);
+      g.fillTriangle(cx + r * 0.06, cy + r * 0.22, cx + r * 0.16, cy + r * 0.22, cx + r * 0.11, cy + r * 0.42);
+    } else {
+      // stage 1: cute surprised + little horns
+      g.fillStyle(0xffffff, 1); g.fillCircle(cx - ex, cy - ey, er); g.fillCircle(cx + ex, cy - ey, er);
+      g.fillStyle(0x1a0a2a, 1); g.fillCircle(cx - ex + 1, cy - ey + 1, er * 0.58); g.fillCircle(cx + ex + 1, cy - ey + 1, er * 0.58);
+      g.fillStyle(0xffffff, 1); g.fillCircle(cx - ex - 1, cy - ey - 1, er * 0.26); g.fillCircle(cx + ex - 1, cy - ey - 1, er * 0.26);
+      g.fillStyle(0xffcc44, 1);
+      g.fillTriangle(cx - r * 0.34, cy - r * 0.84, cx - r * 0.2, cy - r * 0.55, cx - r * 0.48, cy - r * 0.55);
+      g.fillTriangle(cx + r * 0.34, cy - r * 0.84, cx + r * 0.48, cy - r * 0.55, cx + r * 0.2, cy - r * 0.55);
+      g.fillStyle(0x1a0a2a, 0.7); g.fillEllipse(cx, cy + r * 0.4, r * 0.38, r * 0.2);
+    }
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteBulletTexture(key) {
+    const W = 10, H = 18, cx = W / 2;
+    const g = this.add.graphics();
+    // body (white → tinted by weapon color)
+    g.fillStyle(0xffffff, 1);
+    g.fillEllipse(cx, H * 0.58, W, H * 0.7);
+    g.fillTriangle(2, H * 0.46, cx, 0, W - 2, H * 0.46);
+    // center highlight
+    g.fillStyle(0xffffff, 0.55);
+    g.fillEllipse(cx - 1, H * 0.38, 3, 7);
+    g.generateTexture(key, W, H);
+    g.destroy();
+  }
+
+  makeCuteBossBulletTexture(key) {
+    const r = 8, S = r * 2 + 8, cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    g.fillStyle(0xff2200, 0.22); g.fillCircle(cx, cy, r + 4);
+    g.fillStyle(0xff4400, 1);    g.fillCircle(cx, cy, r);
+    g.fillStyle(0xff8844, 1);    g.fillCircle(cx, cy, r * 0.58);
+    g.fillStyle(0xffffff, 0.55); g.fillCircle(cx - 2, cy - 2, r * 0.28);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteWeaponBoxTexture(key) {
+    const r = WEAPON_BOX_RADIUS, S = r * 2, half = r;
+    const g = this.add.graphics();
+    // wood body
+    g.fillStyle(0xc8913a, 1);
+    g.fillRoundedRect(2, 2, S - 4, S - 4, 9);
+    // grain lines
+    g.fillStyle(0xa8711a, 1);
+    g.fillRect(2, half - 4, S - 4, 8);
+    g.fillRect(half - 4, 2, 8, S - 4);
+    // wood texture stripes
+    g.fillStyle(0xb87c22, 0.5);
+    g.fillRect(18, 2, 4, S - 4);
+    g.fillRect(S - 22, 2, 4, S - 4);
+    // metal corners
+    g.fillStyle(0x778899, 1);
+    const cs = 14;
+    g.fillRoundedRect(2, 2, cs, cs, 4);
+    g.fillRoundedRect(S - cs - 2, 2, cs, cs, 4);
+    g.fillRoundedRect(2, S - cs - 2, cs, cs, 4);
+    g.fillRoundedRect(S - cs - 2, S - cs - 2, cs, cs, 4);
+    // corner shine
+    g.fillStyle(0xaabbcc, 0.6);
+    g.fillRect(4, 4, 4, 4);
+    g.fillRect(S - 10, 4, 4, 4);
+    // center lock star
+    const lpts = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 - Math.PI / 8;
+      const lr = i % 2 === 0 ? 11 : 5;
+      lpts.push({ x: half + Math.cos(a) * lr, y: half + Math.sin(a) * lr });
+    }
+    g.fillStyle(0xffcc44, 1);
+    g.fillPoints(lpts, true);
+    g.fillStyle(0xffe888, 1);
+    g.fillCircle(half, half, 4);
+    // top highlight
+    g.fillStyle(0xffffff, 0.12);
+    g.fillRoundedRect(4, 4, S - 8, (S - 8) * 0.42, 7);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteWeaponPickupTexture(key, r) {
+    const S = r * 2 + 6, cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    // 5-pointed star (white for tinting)
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const rad = i % 2 === 0 ? r : r * 0.42;
+      pts.push({ x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad });
+    }
+    g.fillStyle(0xffffff, 0.25); g.fillCircle(cx, cy, r + 2); // glow
+    g.fillStyle(0xffffff, 1);    g.fillPoints(pts, true);
+    g.fillStyle(0xffffff, 0.6);  g.fillCircle(cx, cy, r * 0.32); // center
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteSquadItemTexture(key, r) {
+    const S = r * 2 + 6, cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    // hexagonal badge (white for tinting)
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 - Math.PI / 6;
+      pts.push({ x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r });
+    }
+    g.fillStyle(0xffffff, 0.2); g.fillCircle(cx, cy, r + 2); // outer glow
+    g.fillStyle(0xffffff, 1);   g.fillPoints(pts, true);
+    g.fillStyle(0xffffff, 0.35); g.fillCircle(cx - r * 0.2, cy - r * 0.25, r * 0.42); // highlight
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeCuteParticleTexture(key) {
+    const r = 4, S = r * 2 + 4, cx = S / 2, cy = S / 2;
+    const g = this.add.graphics();
+    g.fillStyle(0xffffff, 0.35); g.fillCircle(cx, cy, r + 2);
+    g.fillStyle(0xffffff, 1);    g.fillCircle(cx, cy, r);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+
+  makeHpBarTexture(key, w, h, isFg) {
+    const g = this.add.graphics();
+    if (isFg) {
+      g.fillStyle(0xff4466, 1);    g.fillRect(0, 0, w, h);
+      g.fillStyle(0xff88aa, 0.6);  g.fillRect(0, 0, w, h * 0.38);
+    } else {
+      g.fillStyle(0x110818, 1);    g.fillRect(0, 0, w, h);
+      g.fillStyle(0x221028, 0.8);  g.fillRect(0, h * 0.5, w, h * 0.5);
+    }
+    g.generateTexture(key, w, h);
+    g.destroy();
   }
 
   makeTriangleTexture(key, w, h, color) {
@@ -215,21 +484,28 @@ export default class GameScene extends Phaser.Scene {
     this.bonusCount   = 0;
     if (!this.sfx) this.sfx = new Sfx();
 
-    // 배경
-    this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x141532);
-    for (let i = 0; i < 60; i++) {
+    // 배경 — 딥 스페이스
+    this.add.rectangle(WORLD_W / 2, WORLD_H / 2, WORLD_W, WORLD_H, 0x080818);
+    // 성운 오버레이
+    this.add.rectangle(WORLD_W / 2, WORLD_H * 0.3, WORLD_W, WORLD_H * 0.44, 0x18083c, 0.38);
+    this.add.rectangle(WORLD_W * 0.3, WORLD_H * 0.65, WORLD_W * 0.5, WORLD_H * 0.32, 0x081828, 0.28);
+    this.add.rectangle(WORLD_W * 0.75, WORLD_H * 0.5, WORLD_W * 0.4, WORLD_H * 0.28, 0x200828, 0.22);
+    // 별 — 크기/밝기 다양
+    for (let i = 0; i < 100; i++) {
+      const bright = Phaser.Math.FloatBetween(0.15, 0.95);
+      const scale  = bright > 0.75 ? Phaser.Math.FloatBetween(1.2, 2.2) : Phaser.Math.FloatBetween(0.4, 1.0);
       this.add.image(
         Phaser.Math.Between(0, WORLD_W),
         Phaser.Math.Between(0, WORLD_H),
         'tex_star'
-      ).setAlpha(Phaser.Math.FloatBetween(0.2, 0.6));
+      ).setAlpha(bright).setScale(scale);
     }
 
-    // 좌우 영역 (초록 = 부대원 증가)
-    this.add.rectangle(ZONE_W / 2,            WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.10);
-    this.add.rectangle(WORLD_W - ZONE_W / 2,  WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.10);
-    this.add.rectangle(COMBAT_LEFT,  WORLD_H / 2, 1, WORLD_H, 0xffffff, 0.18);
-    this.add.rectangle(COMBAT_RIGHT, WORLD_H / 2, 1, WORLD_H, 0xffffff, 0.18);
+    // 좌우 부대원 아이템 구역 (부드러운 연두 띠)
+    this.add.rectangle(ZONE_W / 2,            WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.07);
+    this.add.rectangle(WORLD_W - ZONE_W / 2,  WORLD_H / 2, ZONE_W, WORLD_H, 0x3ad27a, 0.07);
+    this.add.rectangle(COMBAT_LEFT,  WORLD_H / 2, 2, WORLD_H, 0x5aeea0, 0.22);
+    this.add.rectangle(COMBAT_RIGHT, WORLD_H / 2, 2, WORLD_H, 0x5aeea0, 0.22);
 
     // 물리 그룹
     this.squadGroup   = this.physics.add.group();
