@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "Bash(git remote *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(ping -n 4 127.0.0.1)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat\\(game\\): 무기 상자 / 부대원 아이템 / 재시작 개선 *)"
+    ]
+  }
+}
