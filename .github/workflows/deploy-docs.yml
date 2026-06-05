@@ -39,7 +39,7 @@ jobs:
       - name: Inject build timestamp
         run: |
           BUILD_TIME=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M (KST)')
-          sed -i "s/BUILD_TIMESTAMP/${BUILD_TIME}/g" docs/index.md
+          find docs -name '*.md' -print0 | xargs -0 sed -i "s/BUILD_TIMESTAMP/${BUILD_TIME}/g"
 
       - name: Build MkDocs site
         run: mkdocs build --strict
