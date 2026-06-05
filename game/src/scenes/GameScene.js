@@ -886,7 +886,9 @@ export default class GameScene extends Phaser.Scene {
     box.setData('hp',    hp);
     box.setData('maxHp', hp);
 
-    const droppedWeapon = WEAPONS[Phaser.Math.Between(0, WEAPONS.length - 1)];
+    const maxTier = Math.min(2 + this.stage, WEAPONS.length); // S1=T3, S2=T4, ..., S8+=T10
+    const pool = WEAPONS.filter((w) => w.tier <= maxTier);
+    const droppedWeapon = pool[Phaser.Math.Between(0, pool.length - 1)];
     box.setData('weaponKey', droppedWeapon.key);
 
     if (box.hpBarBg) { box.hpBarBg.destroy(); box.hpBarBg = null; }
