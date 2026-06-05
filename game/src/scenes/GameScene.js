@@ -934,7 +934,7 @@ export default class GameScene extends Phaser.Scene {
       const wasBoss = enemy === this.activeBoss;
       this.showScorePopup(enemy.x, enemy.y, reward, wasBoss);
       this.deathEmitter.explode(wasBoss ? 28 : 8, enemy.x, enemy.y);
-      this.cameras.main.shake(wasBoss ? 300 : 60, wasBoss ? 0.02 : 0.004);
+      if (wasBoss) this.cameras.main.shake(300, 0.02);
       if (wasBoss) this.sfx.bossDeath(); else this.sfx.enemyDeath();
       this.killEnemy(enemy);
       this.score += reward;
@@ -968,7 +968,6 @@ export default class GameScene extends Phaser.Scene {
     const hp = box.getData('hp') - damage;
     if (hp <= 0) {
       this.deathEmitter.explode(14, box.x, box.y);
-      this.cameras.main.shake(80, 0.006);
       this.killWeaponBox(box, true);
     } else {
       box.setData('hp', hp);
