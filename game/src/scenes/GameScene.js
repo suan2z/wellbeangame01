@@ -803,6 +803,10 @@ export default class GameScene extends Phaser.Scene {
     boss.hpBarFg = barFg;
     boss.hpBarW  = barW;
 
+    boss.setData('animPhase', Math.random() * Math.PI * 2);
+    boss.setData('animFreq', Phaser.Math.FloatBetween(2.6, 3.6));
+    boss.setScale(1);
+    boss.setRotation(0);
     this.activeBoss = boss;
     this.sfx.bossAppear();
     this.bossText.setText(`스테이지 ${this.stage} · 웨이브 ${this.bossNum}/${this.bossCount}  HP ${actualHp}`);
@@ -959,20 +963,11 @@ export default class GameScene extends Phaser.Scene {
     enemy.setData('typeKey', type.key);
     enemy.setData('bossStage', 0);
 
-    // 행동 패턴 (좀비 비틀거림 / 추적 / 직진)
-    const r = Math.random();
-    if (r < 0.6) {
-      enemy.setData('behavior', 'wobble');
-      enemy.setData('ampx',  Phaser.Math.Between(30, 60));
-      enemy.setData('freq',  Phaser.Math.FloatBetween(1.4, 3.2));
-      enemy.setData('phase', Math.random() * Math.PI * 2);
-      enemy.setData('spawnX', x);
-    } else if (r < 0.85) {
-      enemy.setData('behavior', 'chase');
-      enemy.setData('chaseSpeed', Phaser.Math.Between(18, 32));
-    } else {
-      enemy.setData('behavior', 'straight');
-    }
+    // 살아있는 느낌 — squash & stretch + 미세 회전 (phase는 개체별 다름)
+    enemy.setData('animPhase', Math.random() * Math.PI * 2);
+    enemy.setData('animFreq', Phaser.Math.FloatBetween(3.6, 5.4));
+    enemy.setScale(1);
+    enemy.setRotation(0);
 
     if (enemy.hpBarBg) { enemy.hpBarBg.destroy(); enemy.hpBarBg = null; }
     if (enemy.hpBarFg) { enemy.hpBarFg.destroy(); enemy.hpBarFg = null; }
@@ -1492,28 +1487,16 @@ export default class GameScene extends Phaser.Scene {
     const nowSec = this.time.now / 1000;
     this.enemies.getChildren().forEach((e) => {
       if (!e.active) return;
-      if (e !== this.activeBoss) {
-        const beh = e.getData('behavior');
-        if (beh === 'wobble') {
-          const ampx   = e.getData('ampx');
-          const freq   = e.getData('freq');
-          const phase  = e.getData('phase');
-          const spawnX = e.getData('spawnX');
-          e.x = Phaser.Math.Clamp(
-            spawnX + ampx * Math.sin(nowSec * freq + phase),
-            COMBAT_LEFT + 12, COMBAT_RIGHT - 12,
-          );
-        } else if (beh === 'chase') {
-          const sx = this.squad[0]?.x ?? WORLD_W / 2;
-          const dx = sx - e.x;
-          if (Math.abs(dx) > 4) {
-            e.x = Phaser.Math.Clamp(
-              e.x + Math.sign(dx) * e.getData('chaseSpeed') * dt,
-              COMBAT_LEFT + 12, COMBAT_RIGHT - 12,
-            );
-          }
-        }
-      }
+      // 살아있는 느낌 — squash & stretch (호흡) + 미세 회전 (좌우 흔들)
+      const phase = e.getData('animPhase') ?? 0;
+      const freq  = e.getData('animFreq')  ?? 4.0;
+      const isBoss = e === this.activeBoss;
+      const sqAmp  = isBoss ? 0.06 : 0.10;
+      const rotAmp = isBoss ? 0.06 : 0.12;
+      const breath = Math.sin(nowSec * freq + phase);
+      e.scaleY = 1 + sqAmp * breath;
+      e.scaleX = 1 - sqAmp * 0.55 * breath;
+      e.rotation = rotAmp * Math.sin(nowSec * freq * 0.65 + phase + 1.2);
       if (e.hpBarBg) {
         e.hpBarBg.x  = e.x;
         e.hpBarBg.y  = e.y - e.displayHeight / 2 - 8;
