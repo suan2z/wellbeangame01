@@ -9,7 +9,7 @@
 
 🕒 **최종 빌드:** `BUILD_TIMESTAMP`
 
-[**▶ 프로토타입 플레이하기**](../play/){ .md-button .md-button--primary }
+[**▶ 프로토타입 플레이하기**](../play/?v=BUILD_VERSION){ .md-button .md-button--primary }
 
 폰 브라우저에서 바로 실행. 드래그로 좌우 이동.
 
