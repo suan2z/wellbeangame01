@@ -889,6 +889,13 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  // 스테이지 클리어 시 부대원을 시작 인원(STARTING_SQUAD)으로 되돌림
+  resetSquad() {
+    this.squad.slice().forEach((m) => m.destroy());
+    this.squad = [];
+    this.addSquadMember(STARTING_SQUAD);
+  }
+
   removeSquadMember(member) {
     const idx = this.squad.indexOf(member);
     if (idx < 0) return;
@@ -1332,7 +1339,7 @@ export default class GameScene extends Phaser.Scene {
       msg.destroy();
       this.clearStageField();
 
-      // 무기 + 화력 버프 초기화 (점수·부대원·이동/점수 버프는 유지), 다음 스테이지 세팅
+      // 무기 + 화력 버프 + 부대원 초기화 (점수·이동/점수 버프는 유지), 다음 스테이지 세팅
       this.stage++;
       this.bossNum   = 0;
       this.bossCount = 4 + this.stage;
@@ -1340,6 +1347,7 @@ export default class GameScene extends Phaser.Scene {
       this.fireRateMult = 1;
       this.bonusCount   = 0;
       this.equipWeapon(STARTING_WEAPON_KEY);
+      this.resetSquad();
       this.applyStagePalette(this.stage);
       this.bossText.setText('');
 
