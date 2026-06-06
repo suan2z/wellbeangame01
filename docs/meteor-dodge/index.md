@@ -9,7 +9,7 @@
 
 🕒 **최종 빌드:** `BUILD_TIMESTAMP`
 
-[**▶ 프로토타입 플레이하기**](../meteor/){ .md-button .md-button--primary }
+[**▶ 프로토타입 플레이하기**](../meteor/?v=BUILD_VERSION){ .md-button .md-button--primary }
 
 폰 브라우저에서 바로 실행. 좌하단 가상 조이스틱으로 이동. 우상단 음소거 토글.
 

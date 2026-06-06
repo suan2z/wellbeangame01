@@ -39,7 +39,9 @@ jobs:
       - name: Inject build timestamp & recent commits
         run: |
           BUILD_TIME=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M (KST)')
+          BUILD_VERSION=$(TZ=Asia/Seoul date '+%Y%m%d%H%M')
           find docs -name '*.md' -print0 | xargs -0 sed -i "s/BUILD_TIMESTAMP/${BUILD_TIME}/g"
+          find docs -name '*.md' -print0 | xargs -0 sed -i "s/BUILD_VERSION/${BUILD_VERSION}/g"
 
           python3 - <<'PY'
           import subprocess
