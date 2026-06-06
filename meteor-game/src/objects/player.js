@@ -73,6 +73,7 @@ export class Player {
     this.jumpTime = 0;
     this.jumpDuration = 0.32;
     this.jumpInitialSpeed = 38; // 적분 시 약 6m 거리
+    this.jumpPeak = 1.5; // 수직 도약 정점 높이 (m)
     this.jumpDirX = 0;
     this.jumpDirZ = 0;
   }
@@ -106,17 +107,18 @@ export class Player {
       this.mesh.position.z += dirZ * speed * dt;
       this.facing = Math.atan2(dirX, dirZ);
     }
-    // 점프 (회피 대시): 시작 시 facing 방향으로 빠르게 짧은 거리 이동 (속도 선형 감쇠)
+    // 점프 (회피 대시): facing 방향으로 빠르게 + 수직 호 (sine arc), 만세→차렷 포즈
     if (this.jumpActive) {
       const t = this.jumpTime / this.jumpDuration;
       if (t >= 1) {
         this.jumpActive = false;
+        this.mesh.position.y = 0;
       } else {
         const speed = this.jumpInitialSpeed * (1 - t);
         this.mesh.position.x += this.jumpDirX * speed * dt;
         this.mesh.position.z += this.jumpDirZ * speed * dt;
+        this.mesh.position.y = Math.sin(t * Math.PI) * this.jumpPeak;
         this.jumpTime += dt;
-        speedFactor = Math.max(speedFactor, 1.0); // 점프 중에도 다리 풀 스윙
       }
     }
     // arena bound clamp
@@ -138,6 +140,28 @@ export class Player {
   }
 
   _animate(dt, speedFactor) {
+    // 점프 중: 만세(팔 위로) → 차렷(팔 내림), 다리 모으기, 상체 살짝 펴기
+    if (this.jumpActive) {
+      const t = this.jumpTime / this.jumpDuration;
+      const pose = Math.sin(t * Math.PI); // 0 → 1 (정점) → 0
+      // 만세: rotation.x = -π 이면 팔이 위로. pose에 따라 0 → -π → 0 으로 swing.
+      const armUp = -Math.PI * pose;
+      this.armL.rotation.x = armUp;
+      this.armR.rotation.x = armUp;
+      // 살짝 V자로 벌림
+      this.armL.rotation.z = 0.4 * pose;
+      this.armR.rotation.z = -0.4 * pose;
+      // 다리 모으기: 펴고 안쪽으로 살짝 회전
+      this.legL.rotation.x = 0;
+      this.legR.rotation.x = 0;
+      this.legL.rotation.z = 0.18 * pose;
+      this.legR.rotation.z = -0.18 * pose;
+      // 상체 약간 펴짐, 바운스 제거 (mesh.position.y가 leap을 담당)
+      this.upper.position.y = 0;
+      this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, -0.05 * pose, Math.min(1, 12 * dt));
+      this.upper.rotation.z = 0;
+      return;
+    }
     // 이동 강도에 따라 보폭/주기 변동
     const stepFreq = 9 + speedFactor * 4; // rad/s 기준
     if (speedFactor > 0.05) {
