@@ -10,41 +10,13 @@ export class HUD {
       pointer-events: none; z-index: 12;
       text-shadow: 0 2px 8px rgba(0,0,0,0.8);
     `;
-    this.distEl = document.createElement('div');
-    this.distEl.style.cssText = 'font-size: 32px; letter-spacing: 2px;';
     this.timeEl = document.createElement('div');
-    this.timeEl.style.cssText = 'font-size: 16px; opacity: 0.85; margin-top: 4px;';
-    this.el.appendChild(this.distEl);
+    this.timeEl.style.cssText = 'font-size: 32px; letter-spacing: 2px;';
+    this.scoreEl = document.createElement('div');
+    this.scoreEl.style.cssText = 'font-size: 16px; opacity: 0.85; margin-top: 4px;';
     this.el.appendChild(this.timeEl);
+    this.el.appendChild(this.scoreEl);
     root.appendChild(this.el);
-
-    // 위험도 게이지 (화염벽 거리) — 하단 가로 바
-    this.dangerWrap = document.createElement('div');
-    this.dangerWrap.style.cssText = `
-      position: fixed; left: 50%; transform: translateX(-50%); bottom: 8px;
-      width: 200px; height: 10px; border-radius: 6px;
-      background: rgba(255,255,255,0.15); overflow: hidden;
-      border: 1.5px solid rgba(255,255,255,0.3);
-      pointer-events: none; z-index: 12;
-    `;
-    this.dangerFill = document.createElement('div');
-    this.dangerFill.style.cssText = `
-      position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
-      background: linear-gradient(90deg, #ffd24c, #ff6a2a, #ff2010);
-      transition: width 0.1s linear;
-    `;
-    this.dangerWrap.appendChild(this.dangerFill);
-    root.appendChild(this.dangerWrap);
-
-    this.dangerLabel = document.createElement('div');
-    this.dangerLabel.textContent = '🔥 추격';
-    this.dangerLabel.style.cssText = `
-      position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px;
-      font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: bold;
-      color: #ffd0b0; text-shadow: 0 1px 4px rgba(0,0,0,0.8);
-      pointer-events: none; z-index: 12;
-    `;
-    root.appendChild(this.dangerLabel);
 
     this.gameOverEl = null;
 
@@ -70,10 +42,6 @@ export class HUD {
     }
   }
 
-  setDistance(meters) {
-    this.distEl.textContent = `${Math.floor(meters)} m`;
-  }
-
   setTime(seconds) {
     const total = Math.floor(seconds * 100);
     const sec = Math.floor(total / 100);
@@ -84,12 +52,11 @@ export class HUD {
     this.timeEl.textContent = `TIME ${mm}:${ss}.${ccs}`;
   }
 
-  // danger 0(안전)~1(위급)
-  setDanger(danger) {
-    this.dangerFill.style.width = `${Math.round(danger * 100)}%`;
+  setScore(score) {
+    this.scoreEl.textContent = `SCORE ${score}`;
   }
 
-  showGameOver(meters, seconds, cause, onRestart) {
+  showGameOver(seconds, onRestart, cause = '') {
     if (this.gameOverEl) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = `
@@ -102,21 +69,21 @@ export class HUD {
     title.textContent = 'GAME OVER';
     title.style.cssText = 'font-size: 48px; font-weight: bold; color: #ff5577; margin-bottom: 8px;';
     const causeEl = document.createElement('div');
-    causeEl.textContent = cause || '';
+    causeEl.textContent = cause;
     causeEl.style.cssText = 'font-size: 15px; color: #ffb0b0; margin-bottom: 16px;';
-    const dist = document.createElement('div');
-    dist.textContent = `질주 거리: ${Math.floor(meters)} m`;
-    dist.style.cssText = 'font-size: 24px; color: #ffe066; margin-bottom: 4px;';
-    const sec = Math.floor(seconds);
+    const total = Math.floor(seconds * 100);
+    const sec = Math.floor(total / 100);
+    const cs  = total % 100;
     const mm = Math.floor(sec / 60).toString().padStart(2, '0');
     const ss = (sec % 60).toString().padStart(2, '0');
+    const ccs = cs.toString().padStart(2, '0');
     const time = document.createElement('div');
-    time.textContent = `생존 시간: ${mm}:${ss}`;
-    time.style.cssText = 'font-size: 18px; color: #ffd0a0; margin-bottom: 24px;';
+    time.textContent = `생존 시간: ${mm}:${ss}.${ccs}`;
+    time.style.cssText = 'font-size: 22px; color: #ffe066; margin-bottom: 24px;';
     const btn = document.createElement('button');
     btn.textContent = '▶ 다시하기';
     btn.style.cssText = `
-      background: rgba(255, 140, 60, 0.25);
+      background: rgba(76, 194, 255, 0.25);
       color: #fff; border: 3px solid #fff;
       padding: 18px 36px; font-size: 24px;
       font-family: inherit; font-weight: bold;
@@ -132,7 +99,6 @@ export class HUD {
     });
     wrap.appendChild(title);
     wrap.appendChild(causeEl);
-    wrap.appendChild(dist);
     wrap.appendChild(time);
     wrap.appendChild(btn);
     this.root.appendChild(wrap);

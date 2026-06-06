@@ -4,14 +4,14 @@ import { Player } from './objects/player.js';
 import { MeteorSystem } from './systems/meteors.js';
 import { ChaseCamera } from './systems/camera.js';
 import { EffectSystem } from './systems/effects.js';
-import { DestructionWall } from './systems/destruction.js';
 import { Joystick } from './ui/joystick.js';
 import { JumpButton } from './ui/jumpbutton.js';
 import { HUD } from './ui/hud.js';
 import Sfx from './sfx.js';
 import {
-  ROAD_HALF, RUN_SPEED_BASE, RUN_SPEED_GROWTH,
-  GIANT_INTERVAL, GIANT_TELEGRAPH, GIANT_IMPACT_Z, GIANT_SURGE_BASE, GIANT_SURGE_GROWTH,
+  ROAD_HALF, ROAD_WIDTH,
+  COLLAPSE_INITIAL_GAP, COLLAPSE_CREEP, COLLAPSE_CREEP_GROWTH,
+  GIANT_INTERVAL, GIANT_TELEGRAPH, GIANT_STEP, GIANT_SAFE,
 } from './constants.js';
 
 const PLAYER_RADIUS = 0.7;
@@ -21,27 +21,25 @@ export class Game {
     this.root = root;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setClearColor(0x1a0d0a);
+    this.renderer.setClearColor(0x0a0a14);
     root.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x1a0d0a, 90, 250);
+    this.scene.fog = new THREE.Fog(0x0a0a14, 120, 260);
 
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 600);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500);
 
     this.clock = new THREE.Clock();
     this.elapsed = 0;
-    this.distance = 0;
     this.gameOver = false;
 
     this.sfx = new Sfx();
 
     this.setupLights();
-    this.setupBackdrop();
+    this.setupGround();
 
     this.road = new RoadSystem(this.scene);
     this.effects = new EffectSystem(this.scene);
-    this.destruction = new DestructionWall(this.scene);
     this.player = new Player(this.scene);
     this.player.onStep = () => this.sfx.footstep();
     this.chase = new ChaseCamera(this.camera, this.player.mesh);
@@ -55,6 +53,8 @@ export class Game {
     this.meteors.onFallStart = () => this.sfx.whoosh();
     this.meteors.onGiantImpact = (x, z) => this.onGiantImpact(x, z);
 
+    // 붕괴 경계 (z<collapseZ 는 무너진 길). 안개 너머에서 시작해 +Z로 전진.
+    this.collapseZ = this.player.mesh.position.z - COLLAPSE_INITIAL_GAP;
     this._giantAccum = 0;
 
     this.joystick = new Joystick(root, () => this.sfx.resume());
@@ -71,24 +71,21 @@ export class Game {
   }
 
   setupLights() {
-    const hemi = new THREE.HemisphereLight(0xffb890, 0x301810, 0.6);
+    const hemi = new THREE.HemisphereLight(0x99bbff, 0x202040, 0.55);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd0a0, 0.8);
-    sun.position.set(20, 70, 40);
+    const sun = new THREE.DirectionalLight(0xfff1d6, 0.85);
+    sun.position.set(40, 80, 30);
     this.scene.add(sun);
-    // 등 뒤 화염의 붉은 반사광
-    this.fireLight = new THREE.PointLight(0xff5520, 0.0, 120, 2);
-    this.fireLight.position.set(0, 8, 16);
-    this.scene.add(this.fireLight);
   }
 
-  setupBackdrop() {
+  setupGround() {
     // 도시 너머 빈 공간을 메우는 거대 바닥
-    const geo = new THREE.PlaneGeometry(1200, 1200);
-    const mat = new THREE.MeshLambertMaterial({ color: 0x15121a });
+    const geo = new THREE.PlaneGeometry(1400, 1400);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x191922 });
     const ground = new THREE.Mesh(geo, mat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.6;
+    ground.position.y = -0.62;
+    this.ground = ground;
     this.scene.add(ground);
   }
 
@@ -104,14 +101,14 @@ export class Game {
   start() { this.tick(); }
 
   onGiantImpact(x, z) {
-    // 길 전체 폭에 걸친 대폭발
+    // 붕괴 경계를 거대 운석 착지점까지 전진 (플레이어 쪽으로)
+    this.collapseZ = Math.max(this.collapseZ, z);
+    // 길 전체 폭 대폭발
     for (let i = -2; i <= 2; i++) {
-      this.effects.explode(x + i * (ROAD_HALF / 2), 1.5, z + (Math.random() - 0.5) * 6, 2.4);
+      this.effects.explode(i * (ROAD_HALF / 2), 1.5, z + (Math.random() - 0.5) * 5, 2.2);
     }
     this.sfx.bigImpact();
-    this.chase.shake(2.2);
-    const surge = GIANT_SURGE_BASE + this.elapsed * GIANT_SURGE_GROWTH;
-    this.destruction.surge(surge);
+    this.chase.shake(1.8);
   }
 
   tick = () => {
@@ -120,45 +117,39 @@ export class Game {
 
     if (!this.gameOver) {
       this.elapsed += dt;
-      const runSpeed = RUN_SPEED_BASE + this.elapsed * RUN_SPEED_GROWTH;
-      const scrollDist = runSpeed * dt;
-      this.distance += scrollDist;
 
       const input = this.joystick.getInput();
-      this.player.update(dt, input, 1);
+      this.player.update(dt, input);
 
-      this.road.update(dt, scrollDist, this.destruction.wallZ);
+      const pz = this.player.mesh.position.z;
 
-      // 5초마다 거대 운석 발사 (현재 화염벽 위치를 강타)
+      // 붕괴 경계 평상시 전진(creep)
+      this.collapseZ += (COLLAPSE_CREEP + this.elapsed * COLLAPSE_CREEP_GROWTH) * dt;
+
+      // 5초마다 거대 운석 — 길 전방(경계보다 플레이어 쪽으로 한 칸)에 강타
       this._giantAccum += dt;
       if (this._giantAccum >= GIANT_INTERVAL) {
         this._giantAccum -= GIANT_INTERVAL;
-        // 화면 위(-Z, 전방·멀리)에 강타 → 지나온 도시 파괴
-        this.meteors.launchGiant(-GIANT_IMPACT_Z, GIANT_TELEGRAPH);
+        const giantZ = Math.min(this.collapseZ + GIANT_STEP, pz - GIANT_SAFE);
+        this.meteors.launchGiant(giantZ, GIANT_TELEGRAPH);
         this.sfx.siren();
       }
 
       this.meteors.update(dt, this.elapsed);
-
-      const engulfed = this.destruction.update(dt);
-
-      // 등 뒤 화염 반사광 (가까울수록 강함)
-      this.fireLight.intensity = 0.4 + this.destruction.danger * 2.2;
-      this.fireLight.position.z = this.destruction.wallZ;
-
+      this.road.update(dt, pz, this.collapseZ);
       this.chase.update(dt);
       this.effects.update(dt);
       this.jumpBtn.update(dt);
 
-      if (engulfed) {
-        this.triggerGameOver('🔥 파괴의 화염에 삼켜졌다');
+      // 붕괴에 휩쓸림 (무너진 길에 닿음)
+      if (pz <= this.collapseZ) {
+        this.triggerGameOver('🏙️ 무너지는 길에 휩쓸렸다');
       } else {
         this.checkCollisions();
       }
 
-      this.hud.setDistance(this.distance);
       this.hud.setTime(this.elapsed);
-      this.hud.setDanger(this.destruction.danger);
+      this.hud.setScore(Math.floor(this.elapsed * 10));
     } else {
       this.effects.update(dt);
       this.chase.update(dt);
@@ -172,7 +163,6 @@ export class Game {
     const pcy = pPos.y + 0.9;
     for (const m of this.meteors.active) {
       if (m.telegraph > 0) continue;
-      if (m.mesh.position.y > 6) continue;
       const dx = m.mesh.position.x - pPos.x;
       const dy = m.mesh.position.y - pcy;
       const dz = m.mesh.position.z - pPos.z;
@@ -189,23 +179,22 @@ export class Game {
     this.gameOver = true;
     this.sfx.gameOver();
     const p = this.player.mesh.position;
-    this.effects.explode(p.x, 1, p.z, 1.6);
-    this.hud.showGameOver(this.distance, this.elapsed, cause, () => {
+    this.effects.explode(p.x, 1, p.z, 1.5);
+    this.hud.showGameOver(this.elapsed, () => {
       this.sfx.click();
       this.restart();
-    });
+    }, cause);
   }
 
   restart() {
     this.elapsed = 0;
-    this.distance = 0;
     this.gameOver = false;
     this._giantAccum = 0;
     this.player.reset();
     this.meteors.reset();
     this.effects.reset();
-    this.destruction.reset();
     this.road.reset();
+    this.collapseZ = this.player.mesh.position.z - COLLAPSE_INITIAL_GAP;
     this.hud.hideGameOver();
   }
 }

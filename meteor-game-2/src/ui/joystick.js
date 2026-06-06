@@ -14,8 +14,8 @@ export class Joystick {
       position: fixed; left: calc(50% - 73px); bottom: 30px;
       width: 140px; height: 140px;
       border-radius: 50%;
-      background: rgba(255, 140, 60, 0.15);
-      border: 3px solid rgba(255, 140, 60, 0.45);
+      background: rgba(76, 194, 255, 0.15);
+      border: 3px solid rgba(76, 194, 255, 0.45);
       pointer-events: none; touch-action: none;
       z-index: 10;
     `;
@@ -25,8 +25,8 @@ export class Joystick {
       width: 64px; height: 64px;
       margin: -32px 0 0 -32px;
       border-radius: 50%;
-      background: rgba(255, 140, 60, 0.55);
-      box-shadow: 0 0 16px rgba(255, 140, 60, 0.5);
+      background: rgba(76, 194, 255, 0.55);
+      box-shadow: 0 0 16px rgba(76, 194, 255, 0.5);
       transition: transform 0.05s linear;
     `;
     this.base.appendChild(this.knob);
