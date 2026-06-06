@@ -61,16 +61,18 @@ export class MeteorSystem {
       const m = this.active[i];
       if (m.telegraph > 0) {
         m.telegraph -= dt;
-        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / 0.9) * 0.8, 0.2, 0.8);
+        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / 1.2) * 0.8, 0.2, 0.8);
         if (m.telegraph <= 0) {
           m.mesh.visible = true;
           m.shadow.material.opacity = 0.85;
+          if (this.onFallStart) this.onFallStart();
         }
       } else {
         m.mesh.position.y -= m.fallSpeed * dt;
         m.mesh.rotation.x += m.rotX * dt;
         m.mesh.rotation.z += m.rotZ * dt;
         if (m.mesh.position.y <= m.radius) {
+          if (this.onImpact) this.onImpact(m.mesh.position.x, m.radius, m.mesh.position.z, m.radius);
           this.recycle(m);
           this.active.splice(i, 1);
         }
@@ -98,6 +100,7 @@ export class MeteorSystem {
     m.shadow.material.opacity = 0;
     m.shadow.visible = true;
     this.active.push(m);
+    if (this.onTelegraph) this.onTelegraph();
   }
 
   recycle(m) {

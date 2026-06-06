@@ -1,6 +1,7 @@
 export class HUD {
-  constructor(root) {
+  constructor(root, sfx = null) {
     this.root = root;
+    this.sfx = sfx;
     this.el = document.createElement('div');
     this.el.style.cssText = `
       position: fixed; top: 18px; left: 0; right: 0;
@@ -18,6 +19,27 @@ export class HUD {
     root.appendChild(this.el);
 
     this.gameOverEl = null;
+
+    if (this.sfx) {
+      this.muteBtn = document.createElement('div');
+      this.muteBtn.style.cssText = `
+        position: fixed; right: 18px; top: 18px;
+        padding: 6px 12px; font-family: 'JetBrains Mono', monospace;
+        font-size: 14px; color: #ffffffcc; font-weight: bold;
+        border: 1.5px solid rgba(255,255,255,0.35); border-radius: 6px;
+        background: rgba(0,0,0,0.35); cursor: pointer; z-index: 13;
+        touch-action: manipulation;
+      `;
+      const refresh = () => { this.muteBtn.textContent = this.sfx.muted ? '🔇 소리 OFF' : '🔊 소리 ON'; };
+      refresh();
+      this.muteBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        this.sfx.resume();
+        this.sfx.toggle();
+        refresh();
+      });
+      root.appendChild(this.muteBtn);
+    }
   }
 
   setTime(seconds) {
