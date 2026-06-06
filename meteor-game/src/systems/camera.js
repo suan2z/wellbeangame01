@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-// 캐릭터 화면 3/5 위치(상단 기준 60%) + 틸트 완화 (하늘 더 보이도록)
-const OFFSET = new THREE.Vector3(0, 8, 14);
+// 카메라 낮은 시점 + 거의 수평 (틸트 2°) → 하늘 가시 + 캐릭터 화면 중상단
+const OFFSET = new THREE.Vector3(0, 4, 14);
 const LOOK_AHEAD = new THREE.Vector3(0, 3.5, 0);
 const FOLLOW_LERP = 6;
 
