@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { ROAD_HALF, PLAYER_X_LIMIT } from '../constants.js';
 
-const FALL_SPEED_BASE = 22;
-const SPAWN_Y = 46;
-// 캐릭터 조준 운석 간격
-const AIMED_INTERVAL_MIN = 1.4;
-const AIMED_INTERVAL_MAX = 2.4;
+const FALL_SPEED_BASE = 18;
+const SPAWN_Y = 42;
+// 대각선 낙하 (운석피하기1과 동일): 화면 안쪽(-Z)에서 카메라 쪽(+Z)으로 다가오며 떨어져 가시성↑
+const DIAGONAL_SLOPE = Math.tan(40 * Math.PI / 180);
+const AIMED_INTERVAL_MIN = 2.0;
+const AIMED_INTERVAL_MAX = 3.0;
 
+// 회피용 운석 (small/medium/large) — 거대 운석은 별도 처리
 const TIERS = [
-  { name: 'small',  rMin: 0.7, rMax: 1.0, count: 22, weight: 0.6, detail: 0, color: 0x886a4a, emissive: 0x331a00 },
-  { name: 'medium', rMin: 1.6, rMax: 2.3, count: 14, weight: 0.4, detail: 0, color: 0x8a5e3a, emissive: 0x3a1500 },
+  { name: 'small',  rMin: 0.7, rMax: 1.0, count: 22, weight: 0.55, detail: 0, color: 0x886a4a, emissive: 0x331a00 },
+  { name: 'medium', rMin: 1.8, rMax: 2.5, count: 14, weight: 0.30, detail: 0, color: 0x8a5e3a, emissive: 0x3a1500 },
+  { name: 'large',  rMin: 3.2, rMax: 4.2, count: 8,  weight: 0.15, detail: 1, color: 0x995030, emissive: 0x501800 },
 ];
 
 function rand(a, b) { return a + Math.random() * (b - a); }
@@ -27,17 +30,17 @@ function pickTierIndex() {
 export class MeteorSystem {
   constructor(scene, player) {
     this.scene = scene;
-    this.player = player;
+    this.player = player; // mesh (자유 이동하므로 매 스폰 시 위치 참조)
     this.active = [];
     this.pools = TIERS.map(() => []);
     this.spawnAccum = 0;
     this._aimedAccum = 0;
     this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
 
-    this.onImpact = null;       // (x,y,z,scale) 작은 운석 지면 충돌
+    this.onImpact = null;
     this.onTelegraph = null;
     this.onFallStart = null;
-    this.onGiantImpact = null;  // (x,z) 거대 운석 강타
+    this.onGiantImpact = null;
 
     for (let t = 0; t < TIERS.length; t++) {
       const tier = TIERS[t];
@@ -56,7 +59,7 @@ export class MeteorSystem {
         const mesh = new THREE.Mesh(geo, mat);
         mesh.visible = false;
         scene.add(mesh);
-        const m = { mesh, radius: r, tier: t, vy: FALL_SPEED_BASE, telegraph: 0, rotX: 0, rotZ: 0, giant: false };
+        const m = { mesh, radius: r, tier: t, vy: FALL_SPEED_BASE, vz: 0, telegraph: 0, rotX: 0, rotZ: 0 };
 
         const shGeo = new THREE.RingGeometry(r * 0.9, r * 1.05, 24);
         const shMat = new THREE.MeshBasicMaterial({ color: 0xff5577, side: THREE.DoubleSide, transparent: true, opacity: 0.0 });
@@ -74,7 +77,7 @@ export class MeteorSystem {
   }
 
   _buildGiant() {
-    const r = ROAD_HALF; // 길 전체 폭을 덮는 크기
+    const r = ROAD_HALF + 1; // 길 전체 폭
     const geo = new THREE.IcosahedronGeometry(r, 1);
     const pos = geo.attributes.position;
     for (let j = 0; j < pos.count; j++) {
@@ -84,13 +87,13 @@ export class MeteorSystem {
       pos.setZ(j, pos.getZ(j) * f);
     }
     geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({ color: 0xaa4525, emissive: 0x661500, flatShading: true });
+    const mat = new THREE.MeshLambertMaterial({ color: 0x6a5040, emissive: 0x100804, flatShading: true });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.visible = false;
     this.scene.add(mesh);
 
-    // 길 전체를 가로지르는 빨강 예고 띠
-    const telGeo = new THREE.PlaneGeometry(ROAD_HALF * 2 + 6, r * 2.2);
+    // 길 전체를 가로지르는 예고 띠 (경고 표식)
+    const telGeo = new THREE.PlaneGeometry(ROAD_HALF * 2 + 4, r * 2.4);
     const telMat = new THREE.MeshBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0, side: THREE.DoubleSide });
     const tel = new THREE.Mesh(telGeo, telMat);
     tel.rotation.x = -Math.PI / 2;
@@ -98,11 +101,11 @@ export class MeteorSystem {
     tel.visible = false;
     this.scene.add(tel);
 
-    this.giant = { mesh, tel, radius: r, state: 'idle', telegraph: 0, telegraphMax: 1, vy: 0, x: 0, z: 0 };
+    this.giant = { mesh, tel, radius: r, state: 'idle', telegraph: 0, telegraphMax: 1, vy: 0, z: 0 };
   }
 
   spawnInterval(elapsed) {
-    return Math.max(0.35, 1.0 - elapsed * 0.01);
+    return Math.max(0.22, 0.95 - elapsed * 0.012);
   }
 
   pickFromPool() {
@@ -114,14 +117,16 @@ export class MeteorSystem {
     return null;
   }
 
-  // 길 위 한 점(tx, tz)에 작은 운석을 떨어뜨림
-  spawnAt(tx, tz, elapsed, telegraph = 1.0) {
+  spawnAt(tx, tz, elapsed, telegraph = 1.2) {
     const m = this.pickFromPool();
     if (!m) return;
-    m.giant = false;
-    m.mesh.position.set(tx, SPAWN_Y, tz);
+    const dz = (SPAWN_Y - m.radius) * DIAGONAL_SLOPE;
+    m.mesh.position.set(tx, SPAWN_Y, tz - dz);
     m.mesh.rotation.set(rand(0, Math.PI * 2), rand(0, Math.PI * 2), rand(0, Math.PI * 2));
-    m.vy = FALL_SPEED_BASE + Math.min(elapsed * 0.3, 12);
+    const speedBias = 1 - m.tier * 0.07;
+    const fall = (FALL_SPEED_BASE + Math.min(elapsed * 0.4, 14)) * speedBias;
+    m.vy = fall;
+    m.vz = fall * DIAGONAL_SLOPE;
     m.telegraph = telegraph;
     m.telegraphMax = telegraph;
     m.rotX = rand(-2.5, 2.5);
@@ -135,23 +140,23 @@ export class MeteorSystem {
   }
 
   spawnOne(elapsed) {
-    const x = rand(-PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    // 플레이어 주변~진행 방향(화면 아래, +Z) 구간에 낙하
-    const z = rand(-4, 16);
+    const px = this.player ? this.player.position.x : 0;
+    const pz = this.player ? this.player.position.z : 0;
+    const x = THREE.MathUtils.clamp(px + rand(-PLAYER_X_LIMIT, PLAYER_X_LIMIT), -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
+    const z = pz + rand(-10, 6);
     this.spawnAt(x, z, elapsed);
   }
 
   spawnAimed(elapsed) {
     if (!this.player) { this.spawnOne(elapsed); return; }
     const px = THREE.MathUtils.clamp(this.player.position.x + rand(-2, 2), -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    this.spawnAt(px, this.player.position.z + rand(-2, 8), elapsed);
+    this.spawnAt(px, this.player.position.z + rand(-2, 2), elapsed);
   }
 
-  // 거대 운석 발사 — 플레이어 뒤(targetZ, 화염벽 위치)로 길 전체 강타
+  // 거대 운석: 길 전방(targetZ)에 길 전체 폭으로 강타
   launchGiant(targetZ, telegraph) {
     const g = this.giant;
     if (g.state !== 'idle') return;
-    g.x = 0;
     g.z = targetZ;
     g.state = 'telegraph';
     g.telegraph = telegraph;
@@ -159,7 +164,7 @@ export class MeteorSystem {
     g.tel.position.set(0, 0.12, targetZ);
     g.tel.material.opacity = 0;
     g.tel.visible = true;
-    g.mesh.position.set(0, SPAWN_Y + 30, targetZ);
+    g.mesh.position.set(0, SPAWN_Y + 28, targetZ);
     g.mesh.visible = false;
   }
 
@@ -173,7 +178,7 @@ export class MeteorSystem {
       if (g.telegraph <= 0) {
         g.state = 'falling';
         g.mesh.visible = true;
-        g.vy = 70;
+        g.vy = 66;
         if (this.onFallStart) this.onFallStart();
       }
     } else if (g.state === 'falling') {
@@ -184,7 +189,7 @@ export class MeteorSystem {
         g.mesh.visible = false;
         g.tel.visible = false;
         g.state = 'idle';
-        if (this.onGiantImpact) this.onGiantImpact(g.x, g.z);
+        if (this.onGiantImpact) this.onGiantImpact(0, g.z);
       }
     }
   }
@@ -218,6 +223,7 @@ export class MeteorSystem {
         }
       } else {
         m.mesh.position.y -= m.vy * dt;
+        m.mesh.position.z += m.vz * dt;
         m.mesh.rotation.x += m.rotX * dt;
         m.mesh.rotation.z += m.rotZ * dt;
         if (m.mesh.position.y <= m.radius) {

@@ -1,18 +1,18 @@
 import * as THREE from 'three';
 import { PLAYER_X_LIMIT } from '../constants.js';
 
-const STEER_SPEED = 16;   // 좌우 이동 속도
-const BANK = 0.35;        // 조향 시 기울임
-const BASE_FACING = Math.PI; // 카메라(+Z)를 바라봄 — 도망치며 앞모습이 보임
+const MOVE_SPEED = 9;
+const TURN_LERP = 12;
 
-// 캐릭터: 토르소 + 머리 + 양다리 + 양팔. 항상 전방(-Z)으로 질주.
-// 조이스틱 X로 좌우 이동, 점프로 회피. (전진은 자동 — 월드가 스크롤된다)
+// 운석피하기1과 동일한 캐릭터/조작: 조이스틱으로 자유 이동, 점프(회피 대시).
+// 차이점: 원형 경기장 제한 대신 좌우(X)만 길 폭으로 제한, 앞뒤(Z)는 자유.
 export class Player {
   constructor(scene) {
     this.scene = scene;
     this.mesh = new THREE.Group();
 
     this.upper = new THREE.Group();
+    this.upper.position.y = 0;
     this.mesh.add(this.upper);
 
     const torsoGeo = new THREE.CapsuleGeometry(0.36, 0.7, 6, 10);
@@ -30,7 +30,7 @@ export class Player {
     const faceGeo = new THREE.BoxGeometry(0.12, 0.04, 0.04);
     const faceMat = new THREE.MeshBasicMaterial({ color: 0x4cc2ff });
     const face = new THREE.Mesh(faceGeo, faceMat);
-    face.position.set(0, 1.88, -0.28); // 전방(-Z)을 바라봄
+    face.position.set(0, 1.88, 0.28);
     this.upper.add(face);
 
     this.armL = this._limb(0.13, 0.6, 0xe0e8ff);
@@ -55,25 +55,28 @@ export class Player {
     this.mesh.add(this.footRing);
 
     scene.add(this.mesh);
-    this.mesh.rotation.y = BASE_FACING;
 
+    this.facing = 0;
     this.animTime = 0;
+    this.idleTime = 0;
     this.lastStep = -1;
     this.onStep = null;
 
-    // jump (수직 회피 도약)
     this.jumpActive = false;
     this.jumpTime = 0;
-    this.jumpDuration = 0.6;
-    this.jumpPeak = 2.6;
+    this.jumpDuration = 0.32;
+    this.jumpInitialSpeed = 38;
+    this.jumpPeak = 1.5;
+    this.jumpDirX = 0;
+    this.jumpDirZ = 0;
   }
-
-  get airborne() { return this.jumpActive; }
 
   jump() {
     if (this.jumpActive) return;
     this.jumpActive = true;
     this.jumpTime = 0;
+    this.jumpDirX = Math.sin(this.facing);
+    this.jumpDirZ = Math.cos(this.facing);
   }
 
   _limb(radius, length, color) {
@@ -83,71 +86,103 @@ export class Player {
     return new THREE.Mesh(geo, mat);
   }
 
-  // input.x: 좌(-1)~우(+1) 조향. runFactor: 질주 강도(애니 속도용)
-  update(dt, input, runFactor = 1) {
-    const steer = THREE.MathUtils.clamp(input.x, -1, 1);
-    this.mesh.position.x += steer * STEER_SPEED * dt;
-    this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    // 조향 시 몸을 살짝 기울이고 진행 방향으로 약간 비틀기 (카메라를 바라본 채)
-    this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, steer * BANK, Math.min(1, 10 * dt));
-    this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, BASE_FACING + steer * 0.25, Math.min(1, 10 * dt));
-
+  // minZ: 이보다 안쪽(-Z, 무너진 길)으로는 못 들어가게 막음(붕괴 경계)
+  update(dt, input, minZ = -Infinity) {
+    const { x, y } = input;
+    const mag = Math.min(1, Math.hypot(x, y));
+    let speedFactor = 0;
+    if (mag > 0.05) {
+      const dirX = x / mag;
+      const dirZ = y / mag;
+      const speed = MOVE_SPEED * mag;
+      speedFactor = mag;
+      this.mesh.position.x += dirX * speed * dt;
+      this.mesh.position.z += dirZ * speed * dt;
+      this.facing = Math.atan2(dirX, dirZ);
+    }
     if (this.jumpActive) {
       const t = this.jumpTime / this.jumpDuration;
       if (t >= 1) {
         this.jumpActive = false;
         this.mesh.position.y = 0;
       } else {
+        const speed = this.jumpInitialSpeed * (1 - t);
+        this.mesh.position.x += this.jumpDirX * speed * dt;
+        this.mesh.position.z += this.jumpDirZ * speed * dt;
         this.mesh.position.y = Math.sin(t * Math.PI) * this.jumpPeak;
         this.jumpTime += dt;
       }
     }
+    // 좌우(X)는 길 폭으로 제한, 무너진 길(minZ)보다 안쪽으로는 못 감
+    this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
+    if (this.mesh.position.z < minZ) this.mesh.position.z = minZ;
 
-    this._animate(dt, runFactor);
+    const cur = this.mesh.rotation.y;
+    let diff = this.facing - cur;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.mesh.rotation.y = cur + diff * Math.min(1, TURN_LERP * dt);
+
+    this._animate(dt, speedFactor);
   }
 
-  _animate(dt, runFactor) {
+  _animate(dt, speedFactor) {
     if (this.jumpActive) {
       const t = this.jumpTime / this.jumpDuration;
       const pose = Math.sin(t * Math.PI);
-      const armUp = -Math.PI * 0.9 * pose;
+      const armUp = -Math.PI * pose;
       this.armL.rotation.x = armUp;
       this.armR.rotation.x = armUp;
       this.armL.rotation.z = 0.4 * pose;
       this.armR.rotation.z = -0.4 * pose;
-      // 다리 모으기
-      this.legL.rotation.x = -0.3 * pose;
-      this.legR.rotation.x = 0.3 * pose;
-      this.legL.rotation.z = 0;
-      this.legR.rotation.z = 0;
+      this.legL.rotation.x = 0;
+      this.legR.rotation.x = 0;
+      this.legL.rotation.z = 0.18 * pose;
+      this.legR.rotation.z = -0.18 * pose;
       this.upper.position.y = 0;
-      this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, -0.05, Math.min(1, 12 * dt));
+      this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, -0.05 * pose, Math.min(1, 12 * dt));
+      this.upper.rotation.z = 0;
       return;
     }
-    // 항상 질주
-    const stepFreq = 11 + runFactor * 5;
-    this.animTime += dt * stepFreq;
-    const swing = Math.sin(this.animTime) * 0.55;
-    this.legL.rotation.x =  swing;
-    this.legR.rotation.x = -swing;
-    this.armL.rotation.x = -swing * 0.9;
-    this.armR.rotation.x =  swing * 0.9;
-    this.armL.rotation.z =  0.12;
-    this.armR.rotation.z = -0.12;
-    this.upper.position.y = Math.abs(Math.sin(this.animTime)) * 0.12;
-    this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, -0.16, Math.min(1, 8 * dt));
-
-    const stepIndex = Math.floor((this.animTime + Math.PI / 2) / Math.PI);
-    if (stepIndex !== this.lastStep) {
-      this.lastStep = stepIndex;
-      if (this.onStep) this.onStep();
+    const stepFreq = 9 + speedFactor * 4;
+    if (speedFactor > 0.05) {
+      this.animTime += dt * stepFreq;
+      const swing = Math.sin(this.animTime) * (0.35 + speedFactor * 0.25);
+      this.legL.rotation.x =  swing;
+      this.legR.rotation.x = -swing;
+      this.armL.rotation.x = -swing * 0.9;
+      this.armR.rotation.x =  swing * 0.9;
+      this.armL.rotation.z =  0.12;
+      this.armR.rotation.z = -0.12;
+      this.upper.position.y = Math.abs(Math.sin(this.animTime)) * (0.06 + speedFactor * 0.08);
+      this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, -0.12 - speedFactor * 0.08, Math.min(1, 8 * dt));
+      this.upper.rotation.z = Math.sin(this.animTime) * 0.04;
+      const stepIndex = Math.floor((this.animTime + Math.PI / 2) / Math.PI);
+      if (stepIndex !== this.lastStep) {
+        this.lastStep = stepIndex;
+        if (this.onStep) this.onStep();
+      }
+    } else {
+      this.idleTime += dt;
+      const ease = Math.min(1, 6 * dt);
+      this.legL.rotation.x = THREE.MathUtils.lerp(this.legL.rotation.x, 0, ease);
+      this.legR.rotation.x = THREE.MathUtils.lerp(this.legR.rotation.x, 0, ease);
+      this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, 0, ease);
+      this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, 0, ease);
+      this.armL.rotation.z = THREE.MathUtils.lerp(this.armL.rotation.z, 0.05, ease);
+      this.armR.rotation.z = THREE.MathUtils.lerp(this.armR.rotation.z, -0.05, ease);
+      this.upper.position.y = Math.sin(this.idleTime * 2.2) * 0.025;
+      this.upper.rotation.x = THREE.MathUtils.lerp(this.upper.rotation.x, 0, ease);
+      this.upper.rotation.z = THREE.MathUtils.lerp(this.upper.rotation.z, 0, ease);
     }
   }
 
   reset() {
     this.mesh.position.set(0, 0, 0);
-    this.mesh.rotation.set(0, BASE_FACING, 0);
+    this.mesh.rotation.set(0, 0, 0);
+    this.facing = 0;
     this.animTime = 0;
+    this.idleTime = 0;
     this.lastStep = -1;
     this.jumpActive = false;
     this.jumpTime = 0;

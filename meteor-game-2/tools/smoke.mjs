@@ -3,71 +3,61 @@ import * as THREE from 'three';
 import { RoadSystem } from '../src/scenes/road.js';
 import { Player } from '../src/objects/player.js';
 import { MeteorSystem } from '../src/systems/meteors.js';
-import { DestructionWall } from '../src/systems/destruction.js';
 import { EffectSystem } from '../src/systems/effects.js';
 import {
-  RUN_SPEED_BASE, RUN_SPEED_GROWTH, GIANT_INTERVAL, GIANT_TELEGRAPH,
-  GIANT_IMPACT_Z, GIANT_SURGE_BASE, GIANT_SURGE_GROWTH, LEAD_MAX, ROAD_HALF,
+  COLLAPSE_INITIAL_GAP, COLLAPSE_CREEP, COLLAPSE_CREEP_GROWTH,
+  GIANT_INTERVAL, GIANT_TELEGRAPH, GIANT_STEP, GIANT_SAFE, PLAYER_X_LIMIT,
 } from '../src/constants.js';
 
 const scene = new THREE.Scene();
 const road = new RoadSystem(scene);
 const effects = new EffectSystem(scene);
-const destruction = new DestructionWall(scene);
 const player = new Player(scene);
 const meteors = new MeteorSystem(scene, player.mesh);
 
 let giantImpacts = 0, smallImpacts = 0;
+let collapseZ = player.mesh.position.z - COLLAPSE_INITIAL_GAP;
 meteors.onImpact = () => { smallImpacts++; };
-meteors.onGiantImpact = (x, z) => {
-  giantImpacts++;
-  destruction.surge(GIANT_SURGE_BASE + elapsed * GIANT_SURGE_GROWTH);
-};
+meteors.onGiantImpact = (x, z) => { giantImpacts++; collapseZ = Math.max(collapseZ, z); };
 
-let elapsed = 0, distance = 0, giantAccum = 0;
+let elapsed = 0, giantAccum = 0, recycles = 0, deaths = 0;
 const dt = 1 / 60;
-let minLead = Infinity, maxLead = -Infinity, recycles = 0;
-
-// road recycle 카운트용 훅
 const origRand = road._randomizeSegment.bind(road);
 road._randomizeSegment = (seg) => { recycles++; origRand(seg); };
 
-// 시뮬레이션 입력: 좌우로 왔다갔다
-for (let frame = 0; frame < 1800; frame++) { // 30초
+for (let frame = 0; frame < 2400; frame++) { // 40초
   elapsed += dt;
-  const runSpeed = RUN_SPEED_BASE + elapsed * RUN_SPEED_GROWTH;
-  const scrollDist = runSpeed * dt;
-  distance += scrollDist;
+  // 플레이어: +Z로 후퇴(도망)하며 좌우로 흔들기
+  const input = { x: Math.sin(elapsed * 1.4) * 0.6, y: 0.6 };
+  player.update(dt, input);
+  const pz = player.mesh.position.z;
 
-  const input = { x: Math.sin(elapsed * 1.3), y: 0 };
-  player.update(dt, input, 1);
-  road.update(dt, scrollDist, destruction.wallZ);
+  collapseZ += (COLLAPSE_CREEP + elapsed * COLLAPSE_CREEP_GROWTH) * dt;
 
   giantAccum += dt;
   if (giantAccum >= GIANT_INTERVAL) {
     giantAccum -= GIANT_INTERVAL;
-    meteors.launchGiant(-GIANT_IMPACT_Z, GIANT_TELEGRAPH);
+    const giantZ = Math.min(collapseZ + GIANT_STEP, pz - GIANT_SAFE);
+    meteors.launchGiant(giantZ, GIANT_TELEGRAPH);
   }
   meteors.update(dt, elapsed);
-  destruction.update(dt);
+  road.update(dt, pz, collapseZ);
   effects.update(dt);
 
-  minLead = Math.min(minLead, destruction.lead);
-  maxLead = Math.max(maxLead, destruction.lead);
+  if (pz <= collapseZ) deaths++;
 
-  // 무결성 체크
-  if (Number.isNaN(player.mesh.position.x)) throw new Error('player.x NaN @frame ' + frame);
-  if (Number.isNaN(distance)) throw new Error('distance NaN');
-  if (Number.isNaN(destruction.lead)) throw new Error('lead NaN');
-  if (Math.abs(player.mesh.position.x) > ROAD_HALF) throw new Error('player out of road bounds: ' + player.mesh.position.x);
+  if (Number.isNaN(player.mesh.position.x)) throw new Error('player.x NaN @' + frame);
+  if (Number.isNaN(collapseZ)) throw new Error('collapseZ NaN @' + frame);
+  if (Math.abs(player.mesh.position.x) > PLAYER_X_LIMIT + 0.001) throw new Error('player out of road: ' + player.mesh.position.x);
 }
 
-console.log('frames simulated : 1800 (30s)');
-console.log('distance (m)     :', distance.toFixed(1));
+const gap = (player.mesh.position.z - collapseZ).toFixed(1);
+console.log('frames simulated : 2400 (40s)');
+console.log('player z final   :', player.mesh.position.z.toFixed(1), '(retreated +Z)');
+console.log('collapseZ final  :', collapseZ.toFixed(1), '| gap to player:', gap);
+console.log('giant impacts    :', giantImpacts, '(expected ~7-8 @5s)');
 console.log('small impacts    :', smallImpacts);
-console.log('giant impacts    :', giantImpacts, '(expected ~5-6)');
-console.log('segment recycles :', recycles, '(>0 means endless road works)');
-console.log('lead range       :', minLead.toFixed(1), '→', maxLead.toFixed(1), '(max', LEAD_MAX + ')');
-console.log('active meteors   :', meteors.active.length);
-console.log('player.x final   :', player.mesh.position.x.toFixed(2));
+console.log('segment recycles :', recycles, '(>0 = 끝없는 길 작동)');
+console.log('collapse caught   :', deaths, 'frames (0 = 후퇴로 생존)');
+console.log('player.x final   :', player.mesh.position.x.toFixed(2), '(|x| <=', PLAYER_X_LIMIT + ')');
 console.log('\nOK — no runtime errors, no NaN, bounds respected.');
