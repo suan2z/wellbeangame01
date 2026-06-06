@@ -2,9 +2,9 @@ import * as THREE from 'three';
 
 const FALL_SPEED_BASE = 18;
 const SPAWN_Y = 40;
-// 대각선 낙하: vz/vy 비율. 0.5 → 수직에서 약 26.6° 기울어진 궤도
+// 대각선 낙하: vz/vy 비율. tan(40°) ≈ 0.839 → 수직에서 40° 기울어진 궤도
 // 운석이 화면 뒤쪽(−Z, 멀리)에서 시작해 캐릭터쪽(+Z 방향)으로 다가오며 떨어짐
-const DIAGONAL_SLOPE = 0.5;
+const DIAGONAL_SLOPE = Math.tan(40 * Math.PI / 180);
 // 캐릭터 조준 운석 간격 (2~3초마다 1회)
 const AIMED_INTERVAL_MIN = 2.0;
 const AIMED_INTERVAL_MAX = 3.0;
