@@ -10,7 +10,7 @@ export class JumpButton {
     this.btn = document.createElement('div');
     this.btn.style.cssText = `
       position: fixed;
-      left: 50px; bottom: 200px;
+      left: 30px; bottom: 52px;
       width: 96px; height: 96px;
       border-radius: 50%;
       background: rgba(255, 180, 80, 0.35);
