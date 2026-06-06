@@ -22,7 +22,7 @@ export class Game {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x0a0a14, 120, 260);
 
-    this.camera = new THREE.PerspectiveCamera(68, 1, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500);
 
     this.clock = new THREE.Clock();
     this.elapsed = 0;

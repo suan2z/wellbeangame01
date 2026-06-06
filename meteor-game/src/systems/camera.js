@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
-// 더 높은 위치 + 위쪽 look-at으로 하늘이 더 보이게 (운석 진입 시점 가시화)
-const OFFSET = new THREE.Vector3(0, 10, 13);
-const LOOK_AHEAD = new THREE.Vector3(0, 5, 0);
+// 캐릭터 화면 3/5 위치(상단 기준 60%) + 틸트 완화 (하늘 더 보이도록)
+const OFFSET = new THREE.Vector3(0, 8, 14);
+const LOOK_AHEAD = new THREE.Vector3(0, 3.5, 0);
 const FOLLOW_LERP = 6;
 
 export class ChaseCamera {
