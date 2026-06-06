@@ -79,3 +79,6 @@ nav:
   - 운석피하기:
       - 개요: meteor-dodge/index.md
       - 작업 히스토리: meteor-dodge/히스토리.md
+  - 운석피하기2:
+      - 개요: meteor-dash/index.md
+      - 작업 히스토리: meteor-dash/히스토리.md

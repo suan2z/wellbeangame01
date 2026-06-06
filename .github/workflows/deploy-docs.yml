@@ -62,6 +62,8 @@ jobs:
                ['game2', 'docs/lane-defense-2']),
               ('docs/meteor-dodge/히스토리.md', 'RECENT_COMMITS_METEOR',
                ['meteor-game', 'docs/meteor-dodge']),
+              ('docs/meteor-dash/히스토리.md', 'RECENT_COMMITS_METEOR2',
+               ['meteor-game-2', 'docs/meteor-dash']),
           ]
           for path, token, paths in targets:
               try:
@@ -87,6 +89,7 @@ jobs:
             game/package-lock.json
             game2/package-lock.json
             meteor-game/package-lock.json
+            meteor-game-2/package-lock.json
 
       - name: Install Lane Defense dependencies
         working-directory: game
@@ -112,12 +115,21 @@ jobs:
         working-directory: meteor-game
         run: npm run build
 
+      - name: Install Meteor Dodge 2 dependencies
+        working-directory: meteor-game-2
+        run: npm ci
+
+      - name: Build Meteor Dodge 2
+        working-directory: meteor-game-2
+        run: npm run build
+
       - name: Merge game builds into site
         run: |
-          mkdir -p site/play site/play2 site/meteor
+          mkdir -p site/play site/play2 site/meteor site/meteor2
           cp -r game/dist/. site/play/
           cp -r game2/dist/. site/play2/
           cp -r meteor-game/dist/. site/meteor/
+          cp -r meteor-game-2/dist/. site/meteor2/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
