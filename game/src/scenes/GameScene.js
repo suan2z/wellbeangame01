@@ -100,7 +100,7 @@ const SQUAD_ITEM_RIGHT_X = WORLD_W - ZONE_W / 2;
 const SQUAD_ITEM_SPAWN_MIN_MS = 3000;
 const SQUAD_ITEM_SPAWN_MAX_MS = 5000;
 const SQUAD_ITEM_FALL_SPEED = 90;
-const STARTING_SQUAD = 3;
+const STARTING_SQUAD = 1;
 
 // 부대원 아이템 종류: -1 / +1 / +2 / ?
 const SQUAD_ITEM_TYPES = [
