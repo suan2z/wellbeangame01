@@ -58,6 +58,8 @@ jobs:
           targets = [
               ('docs/lane-defense/히스토리.md', 'RECENT_COMMITS_LANE',
                ['game', 'docs/lane-defense']),
+              ('docs/lane-defense-2/히스토리.md', 'RECENT_COMMITS_LANE2',
+               ['game2', 'docs/lane-defense-2']),
               ('docs/meteor-dodge/히스토리.md', 'RECENT_COMMITS_METEOR',
                ['meteor-game', 'docs/meteor-dodge']),
           ]
@@ -83,6 +85,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             game/package-lock.json
+            game2/package-lock.json
             meteor-game/package-lock.json
 
       - name: Install Lane Defense dependencies
@@ -91,6 +94,14 @@ jobs:
 
       - name: Build Lane Defense
         working-directory: game
+        run: npm run build
+
+      - name: Install Lane Defense 2 dependencies
+        working-directory: game2
+        run: npm ci
+
+      - name: Build Lane Defense 2
+        working-directory: game2
         run: npm run build
 
       - name: Install Meteor Dodge dependencies
@@ -103,8 +114,9 @@ jobs:
 
       - name: Merge game builds into site
         run: |
-          mkdir -p site/play site/meteor
+          mkdir -p site/play site/play2 site/meteor
           cp -r game/dist/. site/play/
+          cp -r game2/dist/. site/play2/
           cp -r meteor-game/dist/. site/meteor/
 
       - name: Upload artifact
