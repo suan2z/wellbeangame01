@@ -1,21 +1,31 @@
-// 점프 버튼: 캐릭터를 전방(현재 facing 방향)으로 빠르게 짧은 거리 이동.
-// 1초 쿨타임 + 원형 파이 sweep으로 잔여 시간 시각화.
+// 점프 컨트롤: 양쪽 하단 코너에 동일한 점프 버튼 2개. 쿨타임은 공유.
+const ACTIVE_BG = 'rgba(255, 180, 80, 0.35)';
+const ACTIVE_BORDER = 'rgba(255, 205, 110, 0.9)';
+const ACTIVE_SHADOW = '0 0 22px rgba(255, 180, 80, 0.55)';
+const DIM_BG = 'rgba(140, 140, 140, 0.30)';
+const DIM_BORDER = 'rgba(160, 160, 160, 0.7)';
+
 export class JumpButton {
   constructor(root, onJump) {
     this.root = root;
     this.onJump = onJump;
     this.cooldownMax = 1.0;
     this.cooldown = 0;
+    this.btns = [this._createBtn('left'), this._createBtn('right')];
+    for (const b of this.btns) root.appendChild(b.el);
+  }
 
-    this.btn = document.createElement('div');
-    this.btn.style.cssText = `
+  _createBtn(side) {
+    const posCss = side === 'left' ? 'left: 30px;' : 'right: 30px;';
+    const el = document.createElement('div');
+    el.style.cssText = `
       position: fixed;
-      left: 30px; bottom: 52px;
+      ${posCss} bottom: 52px;
       width: 96px; height: 96px;
       border-radius: 50%;
-      background: rgba(255, 180, 80, 0.35);
-      border: 3px solid rgba(255, 205, 110, 0.9);
-      box-shadow: 0 0 22px rgba(255, 180, 80, 0.55);
+      background: ${ACTIVE_BG};
+      border: 3px solid ${ACTIVE_BORDER};
+      box-shadow: ${ACTIVE_SHADOW};
       color: #fff;
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 17px;
@@ -31,11 +41,10 @@ export class JumpButton {
       overflow: hidden;
       transition: transform 0.12s ease-out, background 0.15s, border-color 0.15s, box-shadow 0.15s;
     `;
-    this.btn.textContent = 'JUMP';
+    el.textContent = 'JUMP';
 
-    // 쿨타임 파이 오버레이 (conic-gradient sweep)
-    this.cd = document.createElement('div');
-    this.cd.style.cssText = `
+    const cd = document.createElement('div');
+    cd.style.cssText = `
       position: absolute;
       inset: 0;
       border-radius: 50%;
@@ -44,11 +53,10 @@ export class JumpButton {
       opacity: 0;
       transition: opacity 0.1s;
     `;
-    this.btn.appendChild(this.cd);
+    el.appendChild(cd);
 
-    root.appendChild(this.btn);
-
-    this.btn.addEventListener('pointerdown', this.onDown);
+    el.addEventListener('pointerdown', this.onDown);
+    return { el, cd };
   }
 
   onDown = (e) => {
@@ -60,26 +68,34 @@ export class JumpButton {
   };
 
   _flash() {
-    this.btn.style.transform = 'scale(1.18)';
-    setTimeout(() => { this.btn.style.transform = 'scale(1)'; }, 110);
+    for (const b of this.btns) {
+      b.el.style.transform = 'scale(1.18)';
+    }
+    setTimeout(() => {
+      for (const b of this.btns) b.el.style.transform = 'scale(1)';
+    }, 110);
   }
 
   update(dt) {
     if (this.cooldown > 0) {
       this.cooldown = Math.max(0, this.cooldown - dt);
-      const remaining = this.cooldown / this.cooldownMax; // 1 → 0
+      const remaining = this.cooldown / this.cooldownMax;
       const deg = remaining * 360;
-      this.cd.style.background = `conic-gradient(rgba(0,0,0,0.55) ${deg}deg, transparent ${deg}deg)`;
-      this.cd.style.opacity = '1';
-      this.btn.style.background = 'rgba(140, 140, 140, 0.30)';
-      this.btn.style.borderColor = 'rgba(160, 160, 160, 0.7)';
-      this.btn.style.boxShadow = 'none';
+      const sweep = `conic-gradient(rgba(0,0,0,0.55) ${deg}deg, transparent ${deg}deg)`;
+      for (const b of this.btns) {
+        b.cd.style.background = sweep;
+        b.cd.style.opacity = '1';
+        b.el.style.background = DIM_BG;
+        b.el.style.borderColor = DIM_BORDER;
+        b.el.style.boxShadow = 'none';
+      }
       if (this.cooldown <= 0) {
-        // 쿨타임 종료 — 다시 활성 상태로
-        this.cd.style.opacity = '0';
-        this.btn.style.background = 'rgba(255, 180, 80, 0.35)';
-        this.btn.style.borderColor = 'rgba(255, 205, 110, 0.9)';
-        this.btn.style.boxShadow = '0 0 22px rgba(255, 180, 80, 0.55)';
+        for (const b of this.btns) {
+          b.cd.style.opacity = '0';
+          b.el.style.background = ACTIVE_BG;
+          b.el.style.borderColor = ACTIVE_BORDER;
+          b.el.style.boxShadow = ACTIVE_SHADOW;
+        }
       }
     }
   }
