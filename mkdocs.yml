@@ -72,6 +72,10 @@ nav:
       - 적 / 웨이브: lane-defense/적.md
       - 무기: lane-defense/무기.md
       - 상자 시스템: lane-defense/상자.md
+  - Lane Defense 2:
+      - 개요: lane-defense-2/index.md
+      - 작업 히스토리: lane-defense-2/히스토리.md
+      - 게임 기획서: lane-defense-2/기획서.md
   - 운석피하기:
       - 개요: meteor-dodge/index.md
       - 작업 히스토리: meteor-dodge/히스토리.md
