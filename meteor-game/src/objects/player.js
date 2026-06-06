@@ -67,6 +67,22 @@ export class Player {
     this.idleTime = 0;
     this.lastStep = -1;
     this.onStep = null; // callback for footstep sfx
+
+    // jump (회피 대시) 상태
+    this.jumpActive = false;
+    this.jumpTime = 0;
+    this.jumpDuration = 0.32;
+    this.jumpInitialSpeed = 38; // 적분 시 약 6m 거리
+    this.jumpDirX = 0;
+    this.jumpDirZ = 0;
+  }
+
+  jump() {
+    if (this.jumpActive) return;
+    this.jumpActive = true;
+    this.jumpTime = 0;
+    this.jumpDirX = Math.sin(this.facing);
+    this.jumpDirZ = Math.cos(this.facing);
   }
 
   _limb(radius, length, color) {
@@ -89,6 +105,19 @@ export class Player {
       this.mesh.position.x += dirX * speed * dt;
       this.mesh.position.z += dirZ * speed * dt;
       this.facing = Math.atan2(dirX, dirZ);
+    }
+    // 점프 (회피 대시): 시작 시 facing 방향으로 빠르게 짧은 거리 이동 (속도 선형 감쇠)
+    if (this.jumpActive) {
+      const t = this.jumpTime / this.jumpDuration;
+      if (t >= 1) {
+        this.jumpActive = false;
+      } else {
+        const speed = this.jumpInitialSpeed * (1 - t);
+        this.mesh.position.x += this.jumpDirX * speed * dt;
+        this.mesh.position.z += this.jumpDirZ * speed * dt;
+        this.jumpTime += dt;
+        speedFactor = Math.max(speedFactor, 1.0); // 점프 중에도 다리 풀 스윙
+      }
     }
     // arena bound clamp
     const r = Math.hypot(this.mesh.position.x, this.mesh.position.z);
@@ -153,6 +182,8 @@ export class Player {
     this.animTime = 0;
     this.idleTime = 0;
     this.lastStep = -1;
+    this.jumpActive = false;
+    this.jumpTime = 0;
     this.upper.position.set(0, 0, 0);
     this.upper.rotation.set(0, 0, 0);
     this.legL.rotation.set(0, 0, 0);
