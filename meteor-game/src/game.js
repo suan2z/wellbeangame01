@@ -38,7 +38,7 @@ export class Game {
     this.player = new Player(this.scene);
     this.player.onStep = () => this.sfx.footstep();
     this.chase = new ChaseCamera(this.camera, this.player.mesh);
-    this.meteors = new MeteorSystem(this.scene, ARENA_RADIUS);
+    this.meteors = new MeteorSystem(this.scene, ARENA_RADIUS, this.player.mesh);
     this.meteors.onImpact = (x, y, z, radius) => {
       this.effects.explode(x, y, z, 1.0 + (radius - 1) * 0.4);
       this.sfx.impact();

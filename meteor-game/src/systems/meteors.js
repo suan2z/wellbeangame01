@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 
 const FALL_SPEED_BASE = 18;
+const SPAWN_Y = 40;
+// 대각선 낙하: vz/vy 비율. 0.5 → 수직에서 약 26.6° 기울어진 궤도
+// 운석이 화면 뒤쪽(−Z, 멀리)에서 시작해 캐릭터쪽(+Z 방향)으로 다가오며 떨어짐
+const DIAGONAL_SLOPE = 0.5;
+// 캐릭터 조준 운석 간격 (2~3초마다 1회)
+const AIMED_INTERVAL_MIN = 2.0;
+const AIMED_INTERVAL_MAX = 3.0;
 
-// 4 티어: small(현재 기본) → medium → large → huge
-// weight 합 = 1.0 (가중 랜덤 스폰), count 합 = 48 (풀 크기)
 const TIERS = [
   { name: 'small',  rMin: 0.7, rMax: 1.0, count: 24, weight: 0.50, detail: 0, color: 0x886a4a, emissive: 0x331a00 },
   { name: 'medium', rMin: 1.8, rMax: 2.5, count: 14, weight: 0.27, detail: 0, color: 0x8a5e3a, emissive: 0x3a1500 },
@@ -24,12 +29,15 @@ function pickTierIndex() {
 }
 
 export class MeteorSystem {
-  constructor(scene, arenaRadius) {
+  constructor(scene, arenaRadius, player) {
     this.scene = scene;
     this.arenaRadius = arenaRadius;
+    this.player = player;
     this.active = [];
     this.pools = TIERS.map(() => []);
     this.spawnAccum = 0;
+    this._aimedAccum = 0;
+    this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
     for (let t = 0; t < TIERS.length; t++) {
       const tier = TIERS[t];
       for (let i = 0; i < tier.count; i++) {
@@ -47,7 +55,7 @@ export class MeteorSystem {
         const mesh = new THREE.Mesh(geo, mat);
         mesh.visible = false;
         scene.add(mesh);
-        const m = { mesh, radius: r, tier: t, fallSpeed: FALL_SPEED_BASE, telegraph: 0, dropY: 0, rotX: 0, rotZ: 0 };
+        const m = { mesh, radius: r, tier: t, vy: FALL_SPEED_BASE, vz: 0, telegraph: 0, rotX: 0, rotZ: 0 };
 
         const shGeo = new THREE.RingGeometry(r * 0.9, r * 1.05, 24);
         const shMat = new THREE.MeshBasicMaterial({ color: 0xff5577, side: THREE.DoubleSide, transparent: true, opacity: 0.0 });
@@ -74,6 +82,13 @@ export class MeteorSystem {
       this.spawnOne(elapsed);
     }
 
+    this._aimedAccum += dt;
+    if (this._aimedAccum >= this._aimedInterval) {
+      this._aimedAccum = 0;
+      this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
+      this.spawnAimed(elapsed);
+    }
+
     for (let i = this.active.length - 1; i >= 0; i--) {
       const m = this.active[i];
       if (m.telegraph > 0) {
@@ -85,7 +100,8 @@ export class MeteorSystem {
           if (this.onFallStart) this.onFallStart();
         }
       } else {
-        m.mesh.position.y -= m.fallSpeed * dt;
+        m.mesh.position.y -= m.vy * dt;
+        m.mesh.position.z += m.vz * dt;
         m.mesh.rotation.x += m.rotX * dt;
         m.mesh.rotation.z += m.rotZ * dt;
         if (m.mesh.position.y <= m.radius) {
@@ -106,18 +122,18 @@ export class MeteorSystem {
     return null;
   }
 
-  spawnOne(elapsed) {
+  spawnAt(tx, tz, elapsed) {
     const m = this.pickFromPool();
     if (!m) return;
-    const r = rand(2, this.arenaRadius - 8);
-    const angle = rand(0, Math.PI * 2);
-    const tx = Math.cos(angle) * r;
-    const tz = Math.sin(angle) * r;
-    m.mesh.position.set(tx, 40, tz);
+    // 임팩트 지점(tx, 0, tz)을 정확히 맞추도록 spawn z를 뒤로(−Z) 밀어둠
+    // dz = (낙하 거리) × slope. 낙하 거리는 SPAWN_Y → radius.
+    const dz = (SPAWN_Y - m.radius) * DIAGONAL_SLOPE;
+    m.mesh.position.set(tx, SPAWN_Y, tz - dz);
     m.mesh.rotation.set(rand(0, Math.PI * 2), rand(0, Math.PI * 2), rand(0, Math.PI * 2));
-    // 큰 운석은 살짝 더 느리게 (반응 시간 확보 + 드라마틱한 낙하)
     const speedBias = 1 - m.tier * 0.07;
-    m.fallSpeed = (FALL_SPEED_BASE + Math.min(elapsed * 0.4, 14)) * speedBias;
+    const fall = (FALL_SPEED_BASE + Math.min(elapsed * 0.4, 14)) * speedBias;
+    m.vy = fall;
+    m.vz = fall * DIAGONAL_SLOPE;
     m.telegraph = 1.2;
     m.rotX = rand(-2.5, 2.5);
     m.rotZ = rand(-2.5, 2.5);
@@ -127,6 +143,17 @@ export class MeteorSystem {
     m.shadow.visible = true;
     this.active.push(m);
     if (this.onTelegraph) this.onTelegraph();
+  }
+
+  spawnOne(elapsed) {
+    const r = rand(2, this.arenaRadius - 8);
+    const angle = rand(0, Math.PI * 2);
+    this.spawnAt(Math.cos(angle) * r, Math.sin(angle) * r, elapsed);
+  }
+
+  spawnAimed(elapsed) {
+    if (!this.player) { this.spawnOne(elapsed); return; }
+    this.spawnAt(this.player.position.x, this.player.position.z, elapsed);
   }
 
   recycle(m) {
@@ -139,5 +166,7 @@ export class MeteorSystem {
     for (const m of this.active) this.recycle(m);
     this.active.length = 0;
     this.spawnAccum = 0;
+    this._aimedAccum = 0;
+    this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
   }
 }
