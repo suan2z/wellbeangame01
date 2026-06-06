@@ -11,7 +11,7 @@ export class JumpButton {
     this.onJump = onJump;
     this.cooldownMax = 1.0;
     this.cooldown = 0;
-    this.btns = [this._createBtn('left'), this._createBtn('right')];
+    this.btns = [this._createBtn('left')];
     for (const b of this.btns) root.appendChild(b.el);
   }
 
