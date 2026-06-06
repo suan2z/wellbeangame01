@@ -14,7 +14,9 @@ const COMBAT_RIGHT = WORLD_W - ZONE_W;
 const PLAYABLE_LEFT = 24;
 const PLAYABLE_RIGHT = WORLD_W - 24;
 
-const SQUAD_MAX = 12;
+const SQUAD_MAX = 100;        // 표시(논리) 최대 인원
+const SQUAD_SOFTCAP = 10;     // 이 인원까지는 실제 전투원과 1:1
+const SQUAD_ACTUAL_MAX = 30;  // 실제 전투원(스프라이트) 최대 — 논리 100명일 때 30명
 const SQUAD_SPAWN_INVULN_MS = 500;
 
 const ENEMY_TYPES = [
@@ -190,6 +192,20 @@ function squadOffsets(N) {
     const theta = i * goldenAngle;
     return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
   });
+}
+
+// 표시 인원(논리) → 실제 전투원 수. 10명까지는 1:1, 이후 완만히 증가해 100명이면 30명.
+function actualSquadSize(logical) {
+  if (logical <= SQUAD_SOFTCAP) return logical;
+  const t = (logical - SQUAD_SOFTCAP) / (SQUAD_MAX - SQUAD_SOFTCAP); // 0~1
+  return Math.round(SQUAD_SOFTCAP + t * (SQUAD_ACTUAL_MAX - SQUAD_SOFTCAP));
+}
+
+// 실제 전투원 수 → 표시 인원(역변환). 일괄 손실(상자 충돌) 시 표시 인원 보정용.
+function logicalFromActual(actual) {
+  if (actual <= SQUAD_SOFTCAP) return actual;
+  const t = (actual - SQUAD_SOFTCAP) / (SQUAD_ACTUAL_MAX - SQUAD_SOFTCAP);
+  return Math.round(SQUAD_SOFTCAP + t * (SQUAD_MAX - SQUAD_SOFTCAP));
 }
 
 export default class GameScene extends Phaser.Scene {
@@ -643,7 +659,8 @@ export default class GameScene extends Phaser.Scene {
 
     // 물리 그룹
     this.squadGroup   = this.physics.add.group();
-    this.squad        = [];
+    this.squad        = [];      // 실제 전투원 스프라이트
+    this.squadCount   = 0;       // 표시(논리) 인원
     this.addSquadMember(STARTING_SQUAD);
 
     this.bullets       = this.physics.add.group({ defaultKey: 'tex_bullet',        maxSize: 400 });
@@ -661,6 +678,17 @@ export default class GameScene extends Phaser.Scene {
       emitting: false,
     });
     this.deathEmitter.setDepth(5);
+
+    // 부대원 증가 시 반짝이 파티클 (금빛)
+    this.sparkleEmitter = this.add.particles(0, 0, 'tex_star', {
+      speed: { min: 40, max: 170 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 2.4, end: 0 },
+      tint: 0xffe066,
+      lifespan: 520,
+      emitting: false,
+    });
+    this.sparkleEmitter.setDepth(6);
 
     this.physics.add.overlap(this.bullets,    this.enemies,       this.onBulletHitEnemy,      null, this);
     this.physics.add.overlap(this.bullets,    this.weaponBoxes,   this.onBulletHitWeaponBox,  null, this);
@@ -681,7 +709,7 @@ export default class GameScene extends Phaser.Scene {
     this.hiScoreText = this.add.text(WORLD_W - 20, 18, `BEST ${this.hiScore}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#ffe066',
     }).setOrigin(1, 0);
-    this.squadText = this.add.text(WORLD_W / 2, 18, `부대원 ${this.squad.length}`, {
+    this.squadText = this.add.text(WORLD_W / 2, 18, `부대원 ${this.squadCount}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#3ad27a', fontStyle: 'bold',
     }).setOrigin(0.5, 0);
     this.weaponText = this.add.text(WORLD_W / 2, 44, weaponLabel(this.weapon), {
@@ -869,16 +897,29 @@ export default class GameScene extends Phaser.Scene {
 
   // ─── 부대원 관리 ─────────────────────────────────────────
 
+  // 표시 인원을 count만큼 늘리고(최대 SQUAD_MAX) 실제 전투원 수를 맞춤 + 반짝이 연출
   addSquadMember(count = 1) {
-    for (let i = 0; i < count; i++) {
-      if (this.squad.length >= SQUAD_MAX) break;
+    const before = this.squadCount;
+    this.squadCount = Math.min(SQUAD_MAX, this.squadCount + count);
+    this.syncSquadSprites();
+    if (this.squadCount > before && before > 0) this.flashSquadGain();
+  }
+
+  // 실제 전투원 스프라이트 수를 표시 인원에 맞게 추가/제거
+  syncSquadSprites() {
+    const target = actualSquadSize(this.squadCount);
+    while (this.squad.length > target) {
+      const m = this.squad.pop();
+      if (m) m.destroy();
+    }
+    while (this.squad.length < target) {
       const m = this.physics.add.sprite(this.targetX, PLAYER_Y, playerTexKey(this.weapon));
       m.body.setSize(28, 28);
       this.squadGroup.add(m);
       this.squad.push(m);
     }
     this.layoutSquad();
-    if (this.squadText) this.squadText.setText(`부대원 ${this.squad.length}`);
+    if (this.squadText) this.squadText.setText(`부대원 ${this.squadCount}`);
   }
 
   layoutSquad() {
@@ -889,32 +930,36 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  // 부대원 증가 시 부대 전체 반짝임 (틴트 플래시 + 스케일 팝 + 금빛 파티클)
+  flashSquadGain() {
+    this.squad.forEach((m) => {
+      if (!m.active) return;
+      m.setTintFill(0xffffff);
+      this.tweens.add({ targets: m, scale: { from: 1.5, to: 1 }, duration: 300, ease: 'Back.easeOut' });
+      this.time.delayedCall(130, () => { if (m.active) m.clearTint(); });
+    });
+    if (this.sparkleEmitter) this.sparkleEmitter.explode(18, this.targetX, PLAYER_Y);
+    this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
+  }
+
   // 스테이지 클리어 시 부대원을 시작 인원(STARTING_SQUAD)으로 되돌림
   resetSquad() {
     this.squad.slice().forEach((m) => m.destroy());
     this.squad = [];
-    this.addSquadMember(STARTING_SQUAD);
+    this.squadCount = STARTING_SQUAD;
+    this.syncSquadSprites();
   }
 
-  removeSquadMember(member) {
-    const idx = this.squad.indexOf(member);
-    if (idx < 0) return;
-    this.squad.splice(idx, 1);
-    member.destroy();
-  }
-
-  loseSquadMember(member) {
-    const idx = this.squad.indexOf(member);
-    if (idx < 0) return;
-    this.squad.splice(idx, 1);
-    member.destroy();
-    this.layoutSquad();
-    this.squadText.setText(`부대원 ${this.squad.length}`);
+  // 피격 1회 = 표시 인원 1 감소. 실제 전투원 수는 매핑에 따라 따라 줄어듦.
+  loseSquadMember() {
+    if (this.squadCount <= 0) return;
+    this.squadCount -= 1;
+    this.syncSquadSprites();
     this.tweens.add({ targets: this.squadText, scale: { from: 1.4, to: 1 }, duration: 200 });
     this.invulnUntil = this.time.now + SQUAD_SPAWN_INVULN_MS;
     this.squad.forEach((m) => m.setAlpha(0.5));
     this.time.delayedCall(SQUAD_SPAWN_INVULN_MS, () => this.squad.forEach((m) => m.setAlpha(1)));
-    if (this.squad.length === 0) this.endGame();
+    if (this.squadCount === 0) this.endGame();
   }
 
   // ─── 사격 ────────────────────────────────────────────────
@@ -1143,22 +1188,23 @@ export default class GameScene extends Phaser.Scene {
     if (!box.active || this.gameOver) return;
     const bx = box.x, by = box.y;
     const r2 = WEAPON_BOX_KILL_RADIUS * WEAPON_BOX_KILL_RADIUS;
-    const toKill = this.squad.filter((m) => {
+    const k = this.squad.filter((m) => {
       if (!m.active) return false;
       const dx = m.x - bx, dy = m.y - by;
       return dx * dx + dy * dy <= r2;
-    });
+    }).length;
     this.killWeaponBox(box, false);
-    if (toKill.length === 0) return;
-    toKill.forEach((m) => this.removeSquadMember(m));
+    if (k === 0) return;
+    // 킬 반경 내 전투원 k명 즉사 → 남은 실제 인원을 표시 인원으로 역산
+    const newActual = Math.max(0, this.squad.length - k);
+    this.squadCount = logicalFromActual(newActual);
+    this.syncSquadSprites();
     this.sfx.squadLoss();
-    this.layoutSquad();
-    this.squadText.setText(`부대원 ${this.squad.length}`);
     this.tweens.add({ targets: this.squadText, scale: { from: 1.4, to: 1 }, duration: 200 });
     this.invulnUntil = this.time.now + SQUAD_SPAWN_INVULN_MS;
     this.squad.forEach((m) => m.setAlpha(0.5));
     this.time.delayedCall(SQUAD_SPAWN_INVULN_MS, () => this.squad.forEach((m) => m.setAlpha(1)));
-    if (this.squad.length === 0) this.endGame();
+    if (this.squadCount === 0) this.endGame();
   }
 
   onSquadHitWeaponPickup(_member, item) {
@@ -1183,10 +1229,8 @@ export default class GameScene extends Phaser.Scene {
     if (value > 0) {
       this.addSquadMember(value);
       this.sfx.squadGain();
-      this.tweens.add({ targets: this.squadText, scale: { from: 1.6, to: 1 }, duration: 250 });
-    } else if (value < 0 && this.squad.length > 0) {
-      const victim = this.squad[Phaser.Math.Between(0, this.squad.length - 1)];
-      this.loseSquadMember(victim);
+    } else if (value < 0 && this.squadCount > 0) {
+      this.loseSquadMember();
     }
   }
 
