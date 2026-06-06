@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import {
-  ROAD_WIDTH, ROAD_HALF, SEGMENT_LEN, SEGMENT_COUNT, TRACK_LEN, RECYCLE_BACK,
+  ROAD_WIDTH, ROAD_HALF, SEGMENT_LEN, SEGMENT_COUNT, TRACK_LEN, NEAR_Z,
 } from '../constants.js';
+
+const FAR_Z = NEAR_Z - TRACK_LEN; // 이보다 더 멀어지면(-Z) 재생성
 
 const BUILDING_COLORS = [0x2a3a55, 0x33445f, 0x252e44, 0x3a4866, 0x2e3a52, 0x40364f];
 const ACCENT_COLORS = [0x4cc2ff, 0xff5b8a, 0xffd24c, 0x9b6bff];
@@ -24,7 +26,7 @@ export class RoadSystem {
 
     for (let i = 0; i < SEGMENT_COUNT; i++) {
       const seg = this._buildSegment();
-      seg.group.position.z = RECYCLE_BACK - i * SEGMENT_LEN;
+      seg.group.position.z = NEAR_Z - i * SEGMENT_LEN;
       this.segments.push(seg);
       this.group.add(seg.group);
       this._randomizeSegment(seg);
@@ -140,15 +142,16 @@ export class RoadSystem {
     }
   }
 
-  // dt: 프레임 시간, scrollDist: 이번 프레임 +Z 이동량, wallZ: 화염벽 z (이보다 큰 구획은 파괴)
+  // dt: 프레임 시간, scrollDist: 이번 프레임 이동량(월드는 -Z로 흘러감),
+  // wallZ: 화염벽 z(음수). 이보다 더 멀리(-Z) 간 구획은 화염에 파괴된다.
   update(dt, scrollDist, wallZ) {
     for (const seg of this.segments) {
-      seg.group.position.z += scrollDist;
-      if (seg.group.position.z > RECYCLE_BACK) {
-        seg.group.position.z -= TRACK_LEN;
+      seg.group.position.z -= scrollDist;
+      if (seg.group.position.z < FAR_Z) {
+        seg.group.position.z += TRACK_LEN;
         this._randomizeSegment(seg);
       }
-      if (seg.group.position.z > wallZ) {
+      if (seg.group.position.z < wallZ) {
         this._applyDestruction(seg, dt);
       }
     }
@@ -157,7 +160,7 @@ export class RoadSystem {
   reset() {
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
-      seg.group.position.z = RECYCLE_BACK - i * SEGMENT_LEN;
+      seg.group.position.z = NEAR_Z - i * SEGMENT_LEN;
       this._randomizeSegment(seg);
     }
   }

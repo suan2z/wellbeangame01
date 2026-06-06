@@ -136,14 +136,15 @@ export class MeteorSystem {
 
   spawnOne(elapsed) {
     const x = rand(-PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    const z = rand(-14, 4);
+    // 플레이어 주변~진행 방향(화면 아래, +Z) 구간에 낙하
+    const z = rand(-4, 16);
     this.spawnAt(x, z, elapsed);
   }
 
   spawnAimed(elapsed) {
     if (!this.player) { this.spawnOne(elapsed); return; }
     const px = THREE.MathUtils.clamp(this.player.position.x + rand(-2, 2), -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    this.spawnAt(px, this.player.position.z + rand(-2, 1), elapsed);
+    this.spawnAt(px, this.player.position.z + rand(-2, 8), elapsed);
   }
 
   // 거대 운석 발사 — 플레이어 뒤(targetZ, 화염벽 위치)로 길 전체 강타

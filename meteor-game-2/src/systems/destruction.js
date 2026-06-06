@@ -18,12 +18,12 @@ export class DestructionWall {
     this.group = new THREE.Group();
     scene.add(this.group);
 
-    // 뒤쪽 소실 지대(검게 탄 바닥)
+    // 화염벽 너머(-Z, 화면 위) 소실 지대(검게 탄 바닥)
     const groundGeo = new THREE.PlaneGeometry(WALL_HALF * 2, 400);
     const groundMat = new THREE.MeshBasicMaterial({ color: 0x0a0604 });
     this.ground = new THREE.Mesh(groundGeo, groundMat);
     this.ground.rotation.x = -Math.PI / 2;
-    this.ground.position.set(0, 0.02, 200); // 화염벽 뒤로 길게
+    this.ground.position.set(0, 0.02, -200); // 화염벽 너머(-Z)로 길게
     this.group.add(this.ground);
 
     // 메인 발광 벽
@@ -56,7 +56,8 @@ export class DestructionWall {
     this._sync();
   }
 
-  get wallZ() { return this.lead; }
+  // 화염벽은 화면 위(-Z)에 있고, lead가 줄면 0(플레이어)을 향해 내려온다.
+  get wallZ() { return -this.lead; }
   // HUD용 위험도 0(안전)~1(위급)
   get danger() { return THREE.MathUtils.clamp(1 - this.lead / LEAD_MAX, 0, 1); }
 
@@ -65,7 +66,7 @@ export class DestructionWall {
   }
 
   _sync() {
-    this.group.position.z = this.lead;
+    this.group.position.z = -this.lead;
   }
 
   // 반환: true면 플레이어가 화염벽에 삼켜짐(게임오버)

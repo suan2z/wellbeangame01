@@ -133,7 +133,8 @@ export class Game {
       this._giantAccum += dt;
       if (this._giantAccum >= GIANT_INTERVAL) {
         this._giantAccum -= GIANT_INTERVAL;
-        this.meteors.launchGiant(GIANT_IMPACT_Z, GIANT_TELEGRAPH);
+        // 화면 위(-Z, 전방·멀리)에 강타 → 지나온 도시 파괴
+        this.meteors.launchGiant(-GIANT_IMPACT_Z, GIANT_TELEGRAPH);
         this.sfx.siren();
       }
 

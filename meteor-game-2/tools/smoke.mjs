@@ -46,7 +46,7 @@ for (let frame = 0; frame < 1800; frame++) { // 30초
   giantAccum += dt;
   if (giantAccum >= GIANT_INTERVAL) {
     giantAccum -= GIANT_INTERVAL;
-    meteors.launchGiant(GIANT_IMPACT_Z, GIANT_TELEGRAPH);
+    meteors.launchGiant(-GIANT_IMPACT_Z, GIANT_TELEGRAPH);
   }
   meteors.update(dt, elapsed);
   destruction.update(dt);

@@ -3,6 +3,7 @@ import { PLAYER_X_LIMIT } from '../constants.js';
 
 const STEER_SPEED = 16;   // 좌우 이동 속도
 const BANK = 0.35;        // 조향 시 기울임
+const BASE_FACING = Math.PI; // 카메라(+Z)를 바라봄 — 도망치며 앞모습이 보임
 
 // 캐릭터: 토르소 + 머리 + 양다리 + 양팔. 항상 전방(-Z)으로 질주.
 // 조이스틱 X로 좌우 이동, 점프로 회피. (전진은 자동 — 월드가 스크롤된다)
@@ -54,6 +55,7 @@ export class Player {
     this.mesh.add(this.footRing);
 
     scene.add(this.mesh);
+    this.mesh.rotation.y = BASE_FACING;
 
     this.animTime = 0;
     this.lastStep = -1;
@@ -86,9 +88,9 @@ export class Player {
     const steer = THREE.MathUtils.clamp(input.x, -1, 1);
     this.mesh.position.x += steer * STEER_SPEED * dt;
     this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -PLAYER_X_LIMIT, PLAYER_X_LIMIT);
-    // 조향 시 몸을 살짝 기울이고 진행 방향으로 약간 비틀기
-    this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, -steer * BANK, Math.min(1, 10 * dt));
-    this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, -steer * 0.25, Math.min(1, 10 * dt));
+    // 조향 시 몸을 살짝 기울이고 진행 방향으로 약간 비틀기 (카메라를 바라본 채)
+    this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, steer * BANK, Math.min(1, 10 * dt));
+    this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, BASE_FACING + steer * 0.25, Math.min(1, 10 * dt));
 
     if (this.jumpActive) {
       const t = this.jumpTime / this.jumpDuration;
@@ -144,7 +146,7 @@ export class Player {
 
   reset() {
     this.mesh.position.set(0, 0, 0);
-    this.mesh.rotation.set(0, 0, 0);
+    this.mesh.rotation.set(0, BASE_FACING, 0);
     this.animTime = 0;
     this.lastStep = -1;
     this.jumpActive = false;

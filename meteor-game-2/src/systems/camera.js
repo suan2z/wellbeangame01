@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-// 플레이어 뒤·위에서 전방(-Z)을 내려다본다. 등 뒤 화염벽·거대 운석이 화면에 들어오도록
-// 충분히 뒤(+Z)·높이 배치 → 거대 운석이 카메라/플레이어를 관통하지 않는다.
-const OFFSET = new THREE.Vector3(0, 12, 32);
-const LOOK = new THREE.Vector3(0, 1.5, -16);
+// 플레이어 앞·위(카메라 쪽 +Z)에서 화면 위쪽(-Z, 멀리=재앙)을 내려다본다.
+// 플레이어는 카메라를 향해 달려오고, 등 뒤(위)로 화염벽·거대 운석이 보인다.
+const OFFSET = new THREE.Vector3(0, 14, 24);
+const LOOK = new THREE.Vector3(0, 2, -20);
 const FOLLOW_LERP = 7;
 const X_FOLLOW = 0.35; // 플레이어 좌우 추적 비율(부분 추적 → 길 전체 가시)
 
