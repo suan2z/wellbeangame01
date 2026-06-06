@@ -3,8 +3,10 @@ import { buildCity } from './scenes/city.js';
 import { Player } from './objects/player.js';
 import { MeteorSystem } from './systems/meteors.js';
 import { ChaseCamera } from './systems/camera.js';
+import { EffectSystem } from './systems/effects.js';
 import { Joystick } from './ui/joystick.js';
 import { HUD } from './ui/hud.js';
+import Sfx from './sfx.js';
 
 const ARENA_RADIUS = 90;
 
@@ -20,21 +22,31 @@ export class Game {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x0a0a14, 120, 260);
 
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(68, 1, 0.1, 500);
 
     this.clock = new THREE.Clock();
     this.elapsed = 0;
     this.gameOver = false;
     this.score = 0;
 
+    this.sfx = new Sfx();
+
     this.setupLights();
     this.setupGround();
     this.city = buildCity(this.scene, ARENA_RADIUS);
+    this.effects = new EffectSystem(this.scene);
     this.player = new Player(this.scene);
+    this.player.onStep = () => this.sfx.footstep();
     this.chase = new ChaseCamera(this.camera, this.player.mesh);
     this.meteors = new MeteorSystem(this.scene, ARENA_RADIUS);
-    this.joystick = new Joystick(root);
-    this.hud = new HUD(root);
+    this.meteors.onImpact = (x, y, z, radius) => {
+      this.effects.explode(x, y, z, 1.0 + (radius - 1) * 0.4);
+      this.sfx.impact();
+    };
+    this.meteors.onTelegraph = () => this.sfx.warning();
+    this.meteors.onFallStart = () => this.sfx.whoosh();
+    this.joystick = new Joystick(root, () => this.sfx.resume());
+    this.hud = new HUD(root, this.sfx);
 
     this.handleResize = this.handleResize.bind(this);
     window.addEventListener('resize', this.handleResize);
@@ -57,7 +69,6 @@ export class Game {
     ground.position.y = 0;
     this.scene.add(ground);
 
-    // arena boundary ring
     const ringGeo = new THREE.RingGeometry(ARENA_RADIUS - 0.3, ARENA_RADIUS + 0.3, 96);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x4cc2ff, side: THREE.DoubleSide, transparent: true, opacity: 0.35 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -65,7 +76,6 @@ export class Game {
     ring.position.y = 0.05;
     this.scene.add(ring);
 
-    // subtle grid lines on ground (helps motion feel)
     const grid = new THREE.GridHelper(ARENA_RADIUS * 2, 30, 0x444466, 0x222244);
     grid.position.y = 0.02;
     this.scene.add(grid);
@@ -93,9 +103,13 @@ export class Game {
       this.player.update(dt, input, ARENA_RADIUS);
       this.chase.update(dt);
       this.meteors.update(dt, this.elapsed);
+      this.effects.update(dt);
       this.checkCollisions();
       this.hud.setTime(this.elapsed);
       this.hud.setScore(Math.floor(this.elapsed * 10));
+    } else {
+      // 게임오버 후에도 이펙트는 계속 진행
+      this.effects.update(dt);
     }
     this.renderer.render(this.scene, this.camera);
   };
@@ -104,6 +118,7 @@ export class Game {
     const pPos = this.player.mesh.position;
     const pRadius = 0.7;
     for (const m of this.meteors.active) {
+      if (m.telegraph > 0) continue;
       const dx = m.mesh.position.x - pPos.x;
       const dy = m.mesh.position.y - (pPos.y + 0.9);
       const dz = m.mesh.position.z - pPos.z;
@@ -118,7 +133,12 @@ export class Game {
 
   triggerGameOver() {
     this.gameOver = true;
+    this.sfx.gameOver();
+    // 폭발 이펙트 한 번 트리거 (피격 위치)
+    const p = this.player.mesh.position;
+    this.effects.explode(p.x, 1, p.z, 1.4);
     this.hud.showGameOver(this.elapsed, () => {
+      this.sfx.click();
       this.restart();
     });
   }
@@ -128,6 +148,7 @@ export class Game {
     this.gameOver = false;
     this.player.reset();
     this.meteors.reset();
+    this.effects.reset();
     this.hud.hideGameOver();
   }
 }

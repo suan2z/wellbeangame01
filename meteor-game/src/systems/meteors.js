@@ -61,16 +61,18 @@ export class MeteorSystem {
       const m = this.active[i];
       if (m.telegraph > 0) {
         m.telegraph -= dt;
-        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / 0.9) * 0.8, 0.2, 0.8);
+        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / 1.2) * 0.8, 0.2, 0.8);
         if (m.telegraph <= 0) {
           m.mesh.visible = true;
           m.shadow.material.opacity = 0.85;
+          if (this.onFallStart) this.onFallStart();
         }
       } else {
         m.mesh.position.y -= m.fallSpeed * dt;
         m.mesh.rotation.x += m.rotX * dt;
         m.mesh.rotation.z += m.rotZ * dt;
         if (m.mesh.position.y <= m.radius) {
+          if (this.onImpact) this.onImpact(m.mesh.position.x, m.radius, m.mesh.position.z, m.radius);
           this.recycle(m);
           this.active.splice(i, 1);
         }
@@ -86,10 +88,11 @@ export class MeteorSystem {
     const angle = rand(0, Math.PI * 2);
     const tx = Math.cos(angle) * r;
     const tz = Math.sin(angle) * r;
-    m.mesh.position.set(tx, 70, tz);
+    // 진입 높이 낮춤(70→40) → 카메라 시야에 들어오면서 떨어지는 모습 보임
+    m.mesh.position.set(tx, 40, tz);
     m.mesh.rotation.set(rand(0, Math.PI * 2), rand(0, Math.PI * 2), rand(0, Math.PI * 2));
     m.fallSpeed = FALL_SPEED_BASE + Math.min(elapsed * 0.4, 14);
-    m.telegraph = 0.9; // 0.9s 동안 그림자만 보이고 떨어지지 않음
+    m.telegraph = 1.2; // 1.2s 동안 그림자만 보이고 떨어지지 않음 (반응 시간 확보)
     m.rotX = rand(-2.5, 2.5);
     m.rotZ = rand(-2.5, 2.5);
     m.mesh.visible = false;
@@ -97,6 +100,7 @@ export class MeteorSystem {
     m.shadow.material.opacity = 0;
     m.shadow.visible = true;
     this.active.push(m);
+    if (this.onTelegraph) this.onTelegraph();
   }
 
   recycle(m) {

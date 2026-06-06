@@ -1,7 +1,8 @@
 // 화면 하단 가상 조이스틱 (드래그 360°)
 export class Joystick {
-  constructor(root) {
+  constructor(root, onActivate = null) {
     this.root = root;
+    this.onActivate = onActivate;
     this.x = 0;
     this.y = 0;
     this.activePointer = null;
@@ -56,6 +57,7 @@ export class Joystick {
     this.center.x = e.clientX;
     this.center.y = e.clientY;
     this.update(e.clientX, e.clientY);
+    if (this.onActivate) this.onActivate();
   };
 
   onMove = (e) => {
