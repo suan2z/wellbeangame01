@@ -5,6 +5,7 @@ import { MeteorSystem } from './systems/meteors.js';
 import { ChaseCamera } from './systems/camera.js';
 import { EffectSystem } from './systems/effects.js';
 import { Joystick } from './ui/joystick.js';
+import { JumpButton } from './ui/jumpbutton.js';
 import { HUD } from './ui/hud.js';
 import Sfx from './sfx.js';
 
@@ -38,7 +39,7 @@ export class Game {
     this.player = new Player(this.scene);
     this.player.onStep = () => this.sfx.footstep();
     this.chase = new ChaseCamera(this.camera, this.player.mesh);
-    this.meteors = new MeteorSystem(this.scene, ARENA_RADIUS);
+    this.meteors = new MeteorSystem(this.scene, ARENA_RADIUS, this.player.mesh);
     this.meteors.onImpact = (x, y, z, radius) => {
       this.effects.explode(x, y, z, 1.0 + (radius - 1) * 0.4);
       this.sfx.impact();
@@ -46,6 +47,11 @@ export class Game {
     this.meteors.onTelegraph = () => this.sfx.warning();
     this.meteors.onFallStart = () => this.sfx.whoosh();
     this.joystick = new Joystick(root, () => this.sfx.resume());
+    this.jumpBtn = new JumpButton(root, () => {
+      this.player.jump();
+      this.sfx.resume();
+      this.sfx.whoosh();
+    });
     this.hud = new HUD(root, this.sfx);
 
     this.handleResize = this.handleResize.bind(this);
@@ -104,6 +110,7 @@ export class Game {
       this.chase.update(dt);
       this.meteors.update(dt, this.elapsed);
       this.effects.update(dt);
+      this.jumpBtn.update(dt);
       this.checkCollisions();
       this.hud.setTime(this.elapsed);
       this.hud.setScore(Math.floor(this.elapsed * 10));

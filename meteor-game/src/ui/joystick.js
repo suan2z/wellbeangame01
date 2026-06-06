@@ -11,7 +11,7 @@ export class Joystick {
 
     this.base = document.createElement('div');
     this.base.style.cssText = `
-      position: fixed; left: 30px; bottom: 30px;
+      position: fixed; left: calc(50% - 73px); bottom: 30px;
       width: 140px; height: 140px;
       border-radius: 50%;
       background: rgba(76, 194, 255, 0.15);
