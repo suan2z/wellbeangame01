@@ -9,6 +9,15 @@ const DIAGONAL_SLOPE = 0.5;
 const AIMED_INTERVAL_MIN = 2.0;
 const AIMED_INTERVAL_MAX = 3.0;
 
+// 살보(volley) 폭격: 60초 이후 8~12초마다 캐릭터 주변 원형으로 6발 동시 낙하
+const SALVO_START = 60.0;
+const SALVO_INTERVAL_MIN = 8.0;
+const SALVO_INTERVAL_MAX = 12.0;
+const SALVO_COUNT = 6;
+const SALVO_RADIUS_MIN = 4;
+const SALVO_RADIUS_MAX = 12;
+const SALVO_TELEGRAPH = 1.5; // 조금 더 긴 예고 시간 (회피 윈도우 확보)
+
 const TIERS = [
   { name: 'small',  rMin: 0.7, rMax: 1.0, count: 24, weight: 0.50, detail: 0, color: 0x886a4a, emissive: 0x331a00 },
   { name: 'medium', rMin: 1.8, rMax: 2.5, count: 14, weight: 0.27, detail: 0, color: 0x8a5e3a, emissive: 0x3a1500 },
@@ -38,6 +47,8 @@ export class MeteorSystem {
     this.spawnAccum = 0;
     this._aimedAccum = 0;
     this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
+    this._salvoAccum = 0;
+    this._salvoInterval = rand(SALVO_INTERVAL_MIN, SALVO_INTERVAL_MAX);
     for (let t = 0; t < TIERS.length; t++) {
       const tier = TIERS[t];
       for (let i = 0; i < tier.count; i++) {
@@ -89,11 +100,20 @@ export class MeteorSystem {
       this.spawnAimed(elapsed);
     }
 
+    if (elapsed >= SALVO_START) {
+      this._salvoAccum += dt;
+      if (this._salvoAccum >= this._salvoInterval) {
+        this._salvoAccum = 0;
+        this._salvoInterval = rand(SALVO_INTERVAL_MIN, SALVO_INTERVAL_MAX);
+        this.spawnSalvo(elapsed);
+      }
+    }
+
     for (let i = this.active.length - 1; i >= 0; i--) {
       const m = this.active[i];
       if (m.telegraph > 0) {
         m.telegraph -= dt;
-        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / 1.2) * 0.8, 0.2, 0.8);
+        m.shadow.material.opacity = THREE.MathUtils.clamp((1 - m.telegraph / m.telegraphMax) * 0.8, 0.2, 0.8);
         if (m.telegraph <= 0) {
           m.mesh.visible = true;
           m.shadow.material.opacity = 0.85;
@@ -113,8 +133,9 @@ export class MeteorSystem {
     }
   }
 
-  pickFromPool() {
-    let t = pickTierIndex();
+  pickFromPool(tierStart) {
+    // tierStart 지정 시 그 인덱스부터 우선 시도 (살보용 small/medium 강제)
+    let t = tierStart !== undefined ? tierStart : pickTierIndex();
     for (let attempt = 0; attempt < TIERS.length; attempt++) {
       if (this.pools[t].length > 0) return this.pools[t].pop();
       t = (t + 1) % TIERS.length;
@@ -122,8 +143,8 @@ export class MeteorSystem {
     return null;
   }
 
-  spawnAt(tx, tz, elapsed) {
-    const m = this.pickFromPool();
+  spawnAt(tx, tz, elapsed, telegraph = 1.2, m = null) {
+    if (!m) m = this.pickFromPool();
     if (!m) return;
     // 임팩트 지점(tx, 0, tz)을 정확히 맞추도록 spawn z를 뒤로(−Z) 밀어둠
     // dz = (낙하 거리) × slope. 낙하 거리는 SPAWN_Y → radius.
@@ -134,7 +155,8 @@ export class MeteorSystem {
     const fall = (FALL_SPEED_BASE + Math.min(elapsed * 0.4, 14)) * speedBias;
     m.vy = fall;
     m.vz = fall * DIAGONAL_SLOPE;
-    m.telegraph = 1.2;
+    m.telegraph = telegraph;
+    m.telegraphMax = telegraph;
     m.rotX = rand(-2.5, 2.5);
     m.rotZ = rand(-2.5, 2.5);
     m.mesh.visible = false;
@@ -156,6 +178,24 @@ export class MeteorSystem {
     this.spawnAt(this.player.position.x, this.player.position.z, elapsed);
   }
 
+  // 살보(volley) 폭격: 캐릭터 주변 원형으로 small/medium 운석 6발 동시 낙하
+  spawnSalvo(elapsed) {
+    if (!this.player) return;
+    const px = this.player.position.x;
+    const pz = this.player.position.z;
+    for (let i = 0; i < SALVO_COUNT; i++) {
+      // 살보는 small(0) 또는 medium(1) 티어로 제한 → 회피 공간 확보
+      const tier = Math.random() < 0.7 ? 0 : 1;
+      const m = this.pickFromPool(tier);
+      if (!m) continue;
+      const angle = (i / SALVO_COUNT) * Math.PI * 2 + rand(-0.25, 0.25);
+      const dist = rand(SALVO_RADIUS_MIN, SALVO_RADIUS_MAX);
+      const tx = px + Math.cos(angle) * dist;
+      const tz = pz + Math.sin(angle) * dist;
+      this.spawnAt(tx, tz, elapsed, SALVO_TELEGRAPH, m);
+    }
+  }
+
   recycle(m) {
     m.mesh.visible = false;
     m.shadow.visible = false;
@@ -168,5 +208,7 @@ export class MeteorSystem {
     this.spawnAccum = 0;
     this._aimedAccum = 0;
     this._aimedInterval = rand(AIMED_INTERVAL_MIN, AIMED_INTERVAL_MAX);
+    this._salvoAccum = 0;
+    this._salvoInterval = rand(SALVO_INTERVAL_MIN, SALVO_INTERVAL_MAX);
   }
 }
