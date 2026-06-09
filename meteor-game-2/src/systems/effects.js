@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 
 // 운석 임팩트 시 폭발: 파편 입자 + 충격파 링 + 섬광 + 잔류 크레이터
-const PARTICLE_POOL = 160;
-const RING_POOL = 12;
-const FLASH_POOL = 8;
-const CRATER_POOL = 12;
+const PARTICLE_POOL = 280;
+const RING_POOL = 20;
+const FLASH_POOL = 14;
+const CRATER_POOL = 18;
 
 const PARTICLE_LIFETIME = 0.9;
 const RING_LIFETIME = 0.55;

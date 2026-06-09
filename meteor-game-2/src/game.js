@@ -4,6 +4,7 @@ import { Player } from './objects/player.js';
 import { MeteorSystem } from './systems/meteors.js';
 import { ChaseCamera } from './systems/camera.js';
 import { EffectSystem } from './systems/effects.js';
+import { FireSea } from './systems/firesea.js';
 import { Joystick } from './ui/joystick.js';
 import { JumpButton } from './ui/jumpbutton.js';
 import { HUD } from './ui/hud.js';
@@ -12,6 +13,7 @@ import {
   ROAD_HALF, ROAD_WIDTH,
   COLLAPSE_INITIAL_GAP, COLLAPSE_CREEP, COLLAPSE_CREEP_GROWTH,
   GIANT_INTERVAL, GIANT_TELEGRAPH, GIANT_STEP, GIANT_SAFE,
+  GIANT_BLAST_HALF_X, GIANT_BLAST_HALF_Z,
 } from './constants.js';
 
 const PLAYER_RADIUS = 0.7;
@@ -40,6 +42,7 @@ export class Game {
 
     this.road = new RoadSystem(this.scene);
     this.effects = new EffectSystem(this.scene);
+    this.fireSea = new FireSea(this.scene, GIANT_BLAST_HALF_X, GIANT_BLAST_HALF_Z);
     this.player = new Player(this.scene);
     this.player.onStep = () => this.sfx.footstep();
     this.chase = new ChaseCamera(this.camera, this.player.mesh);
@@ -103,12 +106,15 @@ export class Game {
   onGiantImpact(x, z) {
     // 붕괴 경계를 거대 운석 착지점까지 전진 (플레이어 쪽으로)
     this.collapseZ = Math.max(this.collapseZ, z);
-    // 길 전체 폭 대폭발
-    for (let i = -2; i <= 2; i++) {
-      this.effects.explode(i * (ROAD_HALF / 2), 1.5, z + (Math.random() - 0.5) * 5, 2.2);
+    // 훨씬 큰 대폭발 (길 + 좌우 도시까지 휩쓰는 범위)
+    for (let i = -3; i <= 3; i++) {
+      this.effects.explode(i * 13, 2, z + (Math.random() - 0.5) * 18, 3.6);
     }
+    this.effects.explode(0, 4, z, 5.0);
+    // 폭발 지점에 다음 폭발까지 남는 붉은 불바다 (무너진 쪽으로 살짝 치우쳐)
+    this.fireSea.ignite(0, z - GIANT_BLAST_HALF_Z * 0.4);
     this.sfx.bigImpact();
-    this.chase.shake(1.8);
+    this.chase.shake(2.8);
   }
 
   tick = () => {
@@ -139,6 +145,7 @@ export class Game {
       this.road.update(dt, pz, this.collapseZ);
       this.chase.update(dt);
       this.effects.update(dt);
+      this.fireSea.update(dt);
       this.jumpBtn.update(dt);
 
       // 붕괴에 휩쓸림 (무너진 길에 닿음)
@@ -152,6 +159,7 @@ export class Game {
       this.hud.setScore(Math.floor(this.elapsed * 10));
     } else {
       this.effects.update(dt);
+      this.fireSea.update(dt);
       this.chase.update(dt);
     }
 
@@ -193,6 +201,7 @@ export class Game {
     this.player.reset();
     this.meteors.reset();
     this.effects.reset();
+    this.fireSea.reset();
     this.road.reset();
     this.collapseZ = this.player.mesh.position.z - COLLAPSE_INITIAL_GAP;
     this.hud.hideGameOver();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROAD_HALF, PLAYER_X_LIMIT } from '../constants.js';
+import { ROAD_HALF, PLAYER_X_LIMIT, GIANT_SPAWN_Y } from '../constants.js';
 
 const FALL_SPEED_BASE = 18;
 const SPAWN_Y = 42;
@@ -164,7 +164,7 @@ export class MeteorSystem {
     g.tel.position.set(0, 0.12, targetZ);
     g.tel.material.opacity = 0;
     g.tel.visible = true;
-    g.mesh.position.set(0, SPAWN_Y + 28, targetZ);
+    g.mesh.position.set(0, GIANT_SPAWN_Y, targetZ);
     g.mesh.visible = false;
   }
 
@@ -178,7 +178,7 @@ export class MeteorSystem {
       if (g.telegraph <= 0) {
         g.state = 'falling';
         g.mesh.visible = true;
-        g.vy = 66;
+        g.vy = 46;
         if (this.onFallStart) this.onFallStart();
       }
     } else if (g.state === 'falling') {
